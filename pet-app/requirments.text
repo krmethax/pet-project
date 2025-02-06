@@ -1,0 +1,8 @@
+npm install @react-navigation/native
+npm install react-native-screens react-native-safe-area-context
+expo install expo-splash-screen
+npm install @react-navigation/native-stack
+npm install @react-navigation/bottom-tabs
+npm install expo-linear-gradient
+npm install @react-native-async-storage/async-storage
+expo-image-picker
