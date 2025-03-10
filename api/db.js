@@ -1,15 +1,17 @@
 // db.js
-const { Pool } = require('pg');
+const mysql = require('mysql2/promise');
 
-// ปรับการตั้งค่า connection ตาม environment ของคุณ
-const pool = new Pool({
-  user: 'postgres',
+const pool = mysql.createPool({
   host: 'localhost',
+  user: 'root',          // ปรับ user ให้ตรงกับ MySQL ของคุณ
   database: 'pet_sitter_app',
-  password: 'krmethax',
-  port: 5432,
+  password: '',
+  port: 3306             // ค่า port ของ MySQL โดยปกติคือ 3306
 });
 
 module.exports = {
-  query: (text, params) => pool.query(text, params),
+  query: async (sql, params) => {
+    const [results] = await pool.execute(sql, params);
+    return results;
+  }
 };

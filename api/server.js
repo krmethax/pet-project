@@ -1,26 +1,36 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const authRoutes = require('./routes/authRoutes');
-const sitterRoutes = require('./routes/sitterRoutes');
-const adminRoutes = require('./routes/adminRoutes');
 const cors = require('cors');
+
+// ตั้งค่า Firebase Admin ก่อน import routes ที่ใช้ Firebase
+const admin = require('firebase-admin');
+const serviceAccount = require('./firebase.json');
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  storageBucket: 'your-actual-bucket-name.appspot.com' // เปลี่ยนเป็น bucket name ที่ถูกต้อง
+});
 
 const app = express();
 
-// ใช้ CORS ก่อน mount routes
+// ใช้ CORS และ bodyParser
 app.use(cors());
-
-// ใช้ bodyParser.json() เพื่อแปลงข้อมูล JSON
 app.use(bodyParser.json());
 
-// Mount routes
+// ตอนนี้จึง import routes ได้อย่างปลอดภัย
+const authRoutes = require('./routes/authRoutes');
+const sitterRoutes = require('./routes/sitterRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
+
+// ใช้งาน uploadRoutes และ routes อื่นๆ
+app.use('/api/', uploadRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/sitter', sitterRoutes);
 app.use('/api/admin', adminRoutes);
 
 // กำหนด PORT และ HOST
 const PORT = process.env.PORT || 5000;
-const HOST = "0.0.0.0"; // หรือไม่ระบุ HOST เพื่อให้ฟังทุก interface
+const HOST = "0.0.0.0";
 
 app.listen(PORT, HOST, () => {
   console.log(`🚀 Server is running on http://${HOST}:${PORT}`);

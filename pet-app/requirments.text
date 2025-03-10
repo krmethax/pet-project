@@ -6,3 +6,6 @@ npm install @react-navigation/bottom-tabs
 npm install expo-linear-gradient
 npm install @react-native-async-storage/async-storage
 expo-image-picker
+npm install react-native-qrcode-svg
+npm install react-native-chart-kit react-native-svg
+npm i react-native-pie

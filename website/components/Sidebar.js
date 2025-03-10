@@ -24,6 +24,11 @@ const Sidebar = () => {
               ประเภทสัตว์เลี้ยง
             </a>
           </li>
+          <li>
+            <a href='/payment'>
+              การจัดการชำระเงิน
+            </a>
+          </li>
         </ul>
       </nav>
     </aside>

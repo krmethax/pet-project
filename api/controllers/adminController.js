@@ -1,10 +1,29 @@
-// controllers/adminControllers.js
-
 const db = require('../db');
 const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
+
+function getBase64Image(filePath) {
+  const imageBuffer = fs.readFileSync(filePath);
+  return imageBuffer.toString('base64');
+}
+
+// สมมติว่าคุณมี endpoint ที่ส่งกลับรูป
+exports.getImage = (req, res) => {
+  const { filename } = req.params;
+  const filePath = path.join(__dirname, '../uploads', filename); // ปรับ path ตามที่ต้องการ
+  if (fs.existsSync(filePath)) {
+    const imageBuffer = fs.readFileSync(filePath);
+    const base64Image = imageBuffer.toString('base64');
+    res.json({ image: `data:image/jpeg;base64,${base64Image}` });
+  } else {
+    res.status(404).json({ message: 'ไม่พบรูปภาพ' });
+  }
+};
 
 /**
  * Endpoint สำหรับดึงข้อมูลการสมัครพี่เลี้ยง (Sitter Registrations)
+ * ตอนนี้จะดึง URL ของรูปที่อัปโหลดไว้ใน Filebase โดยตรง
  */
 exports.getSitterRegistrations = async (req, res) => {
   try {
@@ -15,22 +34,10 @@ exports.getSitterRegistrations = async (req, res) => {
         last_name, 
         email, 
         phone, 
-        CASE 
-          WHEN profile_image IS NOT NULL 
-            THEN 'data:image/jpeg;base64,' || encode(profile_image, 'base64')
-          ELSE NULL 
-        END AS profile_image_base64,
+        profile_image AS profile_image_url,
         verification_status, 
-        CASE 
-          WHEN face_image IS NOT NULL 
-            THEN 'data:image/jpeg;base64,' || encode(face_image, 'base64')
-          ELSE NULL 
-        END AS face_image,
-        CASE 
-          WHEN id_card_image IS NOT NULL 
-            THEN 'data:image/jpeg;base64,' || encode(id_card_image, 'base64')
-          ELSE NULL 
-        END AS id_card_image,
+        face_image AS face_image_url,
+        id_card_image AS id_card_image_url,
         updated_at AS verify_created_at
       FROM Pet_Sitters
       ORDER BY created_at DESC;
@@ -38,14 +45,13 @@ exports.getSitterRegistrations = async (req, res) => {
     const result = await db.query(query);
     return res.status(200).json({
       message: 'ดึงข้อมูลพี่เลี้ยงสำเร็จ',
-      registrations: result.rows
+      registrations: result
     });
   } catch (error) {
     console.error('Error fetching sitter registrations:', error);
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' });
   }
 };
-
 /**
  * Endpoint สำหรับเปลี่ยนสถานะพี่เลี้ยง (Approve/Reject)
  * รับค่า sitter_id และ status จาก request body และส่งอีเมลแจ้งผลกลับไปยังผู้สมัคร
@@ -62,16 +68,22 @@ exports.updateSitterStatus = async (req, res) => {
     // อัปเดตสถานะในตาราง Pet_Sitters
     const updateQuery = `
       UPDATE Pet_Sitters
-      SET verification_status = $1,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE sitter_id = $2
-      RETURNING email, first_name, last_name, verification_status
+      SET verification_status = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE sitter_id = ?
     `;
-    const result = await db.query(updateQuery, [status, sitter_id]);
-    if (result.rows.length === 0) {
+    const updateResult = await db.query(updateQuery, [status, sitter_id]);
+    if (updateResult.affectedRows === 0) {
       return res.status(404).json({ message: "ไม่พบพี่เลี้ยงที่ต้องการอัปเดต" });
     }
-    const sitter = result.rows[0];
+
+    // ดึงข้อมูลที่อัปเดตแล้ว
+    const selectQuery = `
+      SELECT email, first_name, last_name, verification_status
+      FROM Pet_Sitters
+      WHERE sitter_id = ?
+    `;
+    const sitterRows = await db.query(selectQuery, [sitter_id]);
+    const sitter = sitterRows[0];
 
     // กำหนดข้อความอีเมลตามสถานะที่เปลี่ยนแปลง
     let subject = "";
@@ -163,16 +175,16 @@ exports.verifyOtp = async (req, res) => {
   try {
     const otpQuery = `
       SELECT * FROM Verify_OTP_Sitter
-      WHERE sitter_id = $1 AND otp_code = $2 AND is_verified = FALSE
+      WHERE sitter_id = ? AND otp_code = ? AND is_verified = FALSE
       ORDER BY created_at DESC LIMIT 1
     `;
     const otpResult = await db.query(otpQuery, [sitter_id, otp_code]);
 
-    if (otpResult.rows.length === 0) {
+    if (otpResult.length === 0) {
       return res.status(400).json({ message: 'รหัส OTP ไม่ถูกต้อง' });
     }
 
-    const otpRecord = otpResult.rows[0];
+    const otpRecord = otpResult[0];
 
     if (new Date() > new Date(otpRecord.expires_at)) {
       return res.status(400).json({ message: 'รหัส OTP หมดอายุแล้ว' });
@@ -181,7 +193,7 @@ exports.verifyOtp = async (req, res) => {
     const updateOtpQuery = `
       UPDATE Verify_OTP_Sitter
       SET is_verified = TRUE, updated_at = CURRENT_TIMESTAMP
-      WHERE otp_id = $1
+      WHERE otp_id = ?
     `;
     await db.query(updateOtpQuery, [otpRecord.otp_id]);
 
@@ -208,7 +220,7 @@ exports.getServiceTypes = async (req, res) => {
       ORDER BY service_type_id ASC
     `;
     const result = await db.query(query);
-    return res.status(200).json({ serviceTypes: result.rows });
+    return res.status(200).json({ serviceTypes: result });
   } catch (error) {
     console.error("Error fetching service types:", error);
     return res.status(500).json({ message: "Internal server error" });
@@ -222,22 +234,27 @@ exports.getServiceTypes = async (req, res) => {
 exports.createServiceType = async (req, res) => {
   try {
     const { short_name, full_description } = req.body;
-    
-    // ตรวจสอบข้อมูลที่จำเป็น (แต่ไม่ต้องตรวจสอบ short_name ให้ตรงกับตัวเลือก)
+
+    // ตรวจสอบข้อมูลที่จำเป็น
     if (!short_name || !full_description) {
       return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบ" });
     }
-    
+
     const insertQuery = `
       INSERT INTO Service_Types (short_name, full_description, created_at, updated_at)
-      VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      RETURNING *
+      VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `;
     const result = await db.query(insertQuery, [short_name, full_description]);
-    
+    const insertedId = result.insertId;
+
+    const selectQuery = `
+      SELECT * FROM Service_Types WHERE service_type_id = ?
+    `;
+    const rows = await db.query(selectQuery, [insertedId]);
+
     return res.status(200).json({
       message: "เพิ่มประเภทบริการสำเร็จ",
-      serviceType: result.rows[0]
+      serviceType: rows[0]
     });
   } catch (error) {
     console.error("Error creating service type:", error);
@@ -252,29 +269,27 @@ exports.createServiceType = async (req, res) => {
 exports.updateServiceType = async (req, res) => {
   try {
     const { service_type_id, short_name, full_description } = req.body;
-    
+
     // ตรวจสอบข้อมูลที่จำเป็น
     if (!service_type_id || !short_name || !full_description) {
       return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบ" });
     }
-    
+
     const updateQuery = `
       UPDATE Service_Types
-      SET short_name = $1,
-          full_description = $2,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE service_type_id = $3
-      RETURNING *
+      SET short_name = ?, full_description = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE service_type_id = ?
     `;
-    const result = await db.query(updateQuery, [short_name, full_description, service_type_id]);
-    
-    if (result.rows.length === 0) {
+    const updateResult = await db.query(updateQuery, [short_name, full_description, service_type_id]);
+    if (updateResult.affectedRows === 0) {
       return res.status(404).json({ message: "ไม่พบประเภทบริการที่ต้องการแก้ไข" });
     }
-    
+    const selectQuery = `SELECT * FROM Service_Types WHERE service_type_id = ?`;
+    const rows = await db.query(selectQuery, [service_type_id]);
+
     return res.status(200).json({
       message: "แก้ไขประเภทบริการสำเร็จ",
-      serviceType: result.rows[0]
+      serviceType: rows[0]
     });
   } catch (error) {
     console.error("Error updating service type:", error);
@@ -292,21 +307,21 @@ exports.deleteServiceType = async (req, res) => {
     if (!service_type_id) {
       return res.status(400).json({ message: "Service Type ID is required" });
     }
-    
-    const deleteQuery = `
-      DELETE FROM Service_Types
-      WHERE service_type_id = $1
-      RETURNING *
-    `;
-    const result = await db.query(deleteQuery, [service_type_id]);
-    
-    if (result.rows.length === 0) {
+
+    // ดึงข้อมูลก่อนลบเพื่อส่งกลับไปยัง client
+    const selectQuery = `SELECT * FROM Service_Types WHERE service_type_id = ?`;
+    const rows = await db.query(selectQuery, [service_type_id]);
+    if (rows.length === 0) {
       return res.status(404).json({ message: "ไม่พบประเภทบริการที่ต้องการลบ" });
     }
-    
+    const deletedServiceType = rows[0];
+
+    const deleteQuery = `DELETE FROM Service_Types WHERE service_type_id = ?`;
+    await db.query(deleteQuery, [service_type_id]);
+
     return res.status(200).json({
       message: "ลบประเภทบริการสำเร็จ",
-      serviceType: result.rows[0]
+      serviceType: deletedServiceType
     });
   } catch (error) {
     console.error("Error deleting service type:", error);
@@ -330,7 +345,7 @@ exports.getPetTypes = async (req, res) => {
     const result = await db.query(query);
     return res.status(200).json({
       message: "ดึงข้อมูลประเภทสัตว์เลี้ยงสำเร็จ",
-      petTypes: result.rows
+      petTypes: result
     });
   } catch (error) {
     console.error("Error fetching pet types:", error);
@@ -350,14 +365,17 @@ exports.createPetType = async (req, res) => {
 
     const insertQuery = `
       INSERT INTO Pet_Types (type_name, description, created_at, updated_at)
-      VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      RETURNING *
+      VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `;
     const result = await db.query(insertQuery, [type_name, description || null]);
+    const insertedId = result.insertId;
+
+    const selectQuery = `SELECT * FROM Pet_Types WHERE pet_type_id = ?`;
+    const rows = await db.query(selectQuery, [insertedId]);
 
     return res.status(200).json({
       message: "สร้างประเภทสัตว์เลี้ยงสำเร็จ",
-      petType: result.rows[0]
+      petType: rows[0]
     });
   } catch (error) {
     console.error("Error creating pet type:", error);
@@ -377,21 +395,19 @@ exports.updatePetType = async (req, res) => {
 
     const updateQuery = `
       UPDATE Pet_Types
-      SET type_name = $1,
-          description = $2,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE pet_type_id = $3
-      RETURNING *
+      SET type_name = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE pet_type_id = ?
     `;
-    const result = await db.query(updateQuery, [type_name, description || null, pet_type_id]);
-
-    if (result.rows.length === 0) {
+    const updateResult = await db.query(updateQuery, [type_name, description || null, pet_type_id]);
+    if (updateResult.affectedRows === 0) {
       return res.status(404).json({ message: "ไม่พบประเภทสัตว์เลี้ยงที่ต้องการแก้ไข" });
     }
+    const selectQuery = `SELECT * FROM Pet_Types WHERE pet_type_id = ?`;
+    const rows = await db.query(selectQuery, [pet_type_id]);
 
     return res.status(200).json({
       message: "แก้ไขประเภทสัตว์เลี้ยงสำเร็จ",
-      petType: result.rows[0]
+      petType: rows[0]
     });
   } catch (error) {
     console.error("Error updating pet type:", error);
@@ -407,23 +423,138 @@ exports.deletePetType = async (req, res) => {
       return res.status(400).json({ message: "กรุณาระบุ pet_type_id" });
     }
 
-    const deleteQuery = `
-      DELETE FROM Pet_Types
-      WHERE pet_type_id = $1
-      RETURNING *
-    `;
-    const result = await db.query(deleteQuery, [pet_type_id]);
-
-    if (result.rows.length === 0) {
+    const selectQuery = `SELECT * FROM Pet_Types WHERE pet_type_id = ?`;
+    const rows = await db.query(selectQuery, [pet_type_id]);
+    if (rows.length === 0) {
       return res.status(404).json({ message: "ไม่พบประเภทสัตว์เลี้ยงที่ต้องการลบ" });
     }
+    const deletedPetType = rows[0];
+
+    const deleteQuery = `DELETE FROM Pet_Types WHERE pet_type_id = ?`;
+    await db.query(deleteQuery, [pet_type_id]);
 
     return res.status(200).json({
       message: "ลบประเภทสัตว์เลี้ยงสำเร็จ",
-      petType: result.rows[0]
+      petType: deletedPetType
     });
   } catch (error) {
     console.error("Error deleting pet type:", error);
     return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.getBookingSlips = async (req, res) => {
+  try {
+    const { status } = req.query;
+    let query = `
+      SELECT 
+        booking_id,
+        member_id,
+        sitter_id,
+        slip_image,
+        total_price,
+        payment_status,
+        created_at,
+        updated_at
+      FROM Bookings
+      WHERE slip_image IS NOT NULL
+    `;
+    const params = [];
+    if (status) {
+      query += " AND payment_status = ?";
+      params.push(status);
+    }
+    query += " ORDER BY created_at DESC";
+
+    const result = await db.query(query, params);
+
+    // slip_image คาดว่าจะเป็น URL จาก Filebase อยู่แล้ว
+    const bookingSlips = result.map((slip) => ({
+      ...slip,
+      slip_image: slip.slip_image ? slip.slip_image : null,
+    }));
+
+    return res.status(200).json({
+      message: "ดึงข้อมูลสลิปการจองสำเร็จ",
+      bookingSlips,
+    });
+  } catch (error) {
+    console.error("Error fetching booking slips:", error);
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+  }
+};
+
+/**
+ * Endpoint สำหรับอัปเดตสถานะสลิปการจอง (เปลี่ยน payment_status)
+ * รับค่า booking_id และ payment_status จาก request body
+ * payment_status ต้องเป็นหนึ่งในค่าที่อนุญาต: 'pending', 'paid', 'failed', 'unpaid'
+ */
+exports.updateBookingSlipStatus = async (req, res) => {
+  try {
+    const { booking_id, payment_status } = req.body;
+    const allowedStatuses = ['pending', 'paid', 'failed', 'unpaid'];
+    if (!booking_id || !payment_status || !allowedStatuses.includes(payment_status)) {
+      return res.status(400).json({ message: "กรุณาส่งข้อมูลให้ครบและ payment_status ต้องเป็น 'pending', 'paid', 'failed' หรือ 'unpaid'" });
+    }
+
+    const updateQuery = `
+      UPDATE Bookings
+      SET payment_status = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE booking_id = ?
+    `;
+    const updateResult = await db.query(updateQuery, [payment_status, booking_id]);
+    if (updateResult.affectedRows === 0) {
+      return res.status(404).json({ message: "ไม่พบข้อมูลการจองที่ต้องการอัปเดต" });
+    }
+    const selectQuery = `
+      SELECT booking_id, slip_image, payment_status
+      FROM Bookings
+      WHERE booking_id = ?
+    `;
+    const rows = await db.query(selectQuery, [booking_id]);
+
+    return res.status(200).json({
+      message: "อัปเดตสถานะสลิปการจองสำเร็จ",
+      booking: rows[0]
+    });
+  } catch (error) {
+    console.error("Error updating booking slip status:", error);
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+  }
+};
+
+/**
+ * Endpoint สำหรับลบสลิปการจอง (โดยอัปเดต slip_image เป็น NULL)
+ * รับค่า booking_id ผ่าน URL parameter
+ */
+exports.deleteBookingSlip = async (req, res) => {
+  try {
+    const { booking_id } = req.params;
+    if (!booking_id) {
+      return res.status(400).json({ message: "กรุณาระบุ booking_id" });
+    }
+    const updateQuery = `
+      UPDATE Bookings
+      SET slip_image = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE booking_id = ?
+    `;
+    const updateResult = await db.query(updateQuery, [booking_id]);
+    if (updateResult.affectedRows === 0) {
+      return res.status(404).json({ message: "ไม่พบข้อมูลการจองที่ต้องการลบสลิป" });
+    }
+    const selectQuery = `
+      SELECT booking_id, slip_image, payment_status
+      FROM Bookings
+      WHERE booking_id = ?
+    `;
+    const rows = await db.query(selectQuery, [booking_id]);
+
+    return res.status(200).json({
+      message: "ลบสลิปการจองสำเร็จ",
+      booking: rows[0]
+    });
+  } catch (error) {
+    console.error("Error deleting booking slip:", error);
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
   }
 };

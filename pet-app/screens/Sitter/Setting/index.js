@@ -37,7 +37,7 @@ export default function Setting() {
   // Fetch sitter data when sitterId is available
   useEffect(() => {
     if (sitterId) {
-      fetch(`http://192.168.133.111:5000/api/sitter/sitter/${sitterId}`)
+      fetch(`http://100.116.44.8:5000/api/sitter/sitter/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -65,7 +65,6 @@ export default function Setting() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Using a gradient background for a modern look */}
       <LinearGradient
         colors={["#fff", "#fff"]}
         style={styles.gradientBackground}
@@ -104,9 +103,12 @@ export default function Setting() {
             </View>
           </View>
 
-          {/* Additional settings options (if needed) */}
+          {/* Options Section */}
           <View style={styles.optionsContainer}>
-            <TouchableOpacity style={styles.optionItem}>
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => navigation.navigate("EditProfile")}
+            >
               <AntDesign name="setting" size={20} color="#6A1B9A" />
               <Text style={styles.optionText}>แก้ไขข้อมูลส่วนตัว</Text>
             </TouchableOpacity>
@@ -114,7 +116,14 @@ export default function Setting() {
               <AntDesign name="infocirlceo" size={20} color="#6A1B9A" />
               <Text style={styles.optionText}>ข้อมูลแอปพลิเคชัน</Text>
             </TouchableOpacity>
-            {/* Add more options as needed */}
+            {/* เมนู ตั้งค่าการชำระเงิน */}
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => navigation.navigate("PaymentMethod")}
+            >
+              <AntDesign name="creditcard" size={20} color="#6A1B9A" />
+              <Text style={styles.optionText}>ตั้งค่าการชำระเงิน</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </LinearGradient>
@@ -123,12 +132,8 @@ export default function Setting() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  gradientBackground: {
-    flex: 1,
-  },
+  safeArea: { flex: 1 },
+  gradientBackground: { flex: 1 },
   scrollContainer: {
     padding: 20,
     paddingBottom: 40,
@@ -187,23 +192,6 @@ const styles = StyleSheet.create({
     fontFamily: "Prompt-Regular",
     color: "#000",
   },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 12,
-    backgroundColor: "#E8F5E9",
-    marginBottom: 30,
-  },
-  statusIcon: {
-    marginRight: 8,
-  },
-  statusText: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    color: "#388E3C",
-  },
   optionsContainer: {
     width: "100%",
   },
@@ -223,8 +211,7 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 16,
     fontFamily: "Prompt-Regular",
-    color: "#4A148C",
+    color: "#6A1B9A",
     marginLeft: 15,
   },
 });
-

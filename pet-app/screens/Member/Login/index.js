@@ -5,20 +5,20 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Keyboard,
   TouchableWithoutFeedback,
+  Image,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import { LinearGradient } from "expo-linear-gradient";
 import { AntDesign } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export default function Login() {
+export default function MemberLogin() {
   const navigation = useNavigation();
 
   // State เก็บค่าฟอร์ม
@@ -35,112 +35,112 @@ export default function Login() {
   // State สำหรับควบคุมการซ่อน/แสดงรหัสผ่าน
   const [hidePassword, setHidePassword] = useState(true);
 
+  // State สำหรับแสดง custom alert
+  const [customAlert, setCustomAlert] = useState({ visible: false, message: "" });
+
   // ฟังก์ชัน Toggle รหัสผ่าน
   const togglePasswordVisibility = () => {
     setHidePassword(!hidePassword);
   };
 
+  // ฟังก์ชันแจ้งเตือนแบบ custom
+  const showAlert = (message) => {
+    setCustomAlert({ visible: true, message });
+  };
+
   // ฟังก์ชันเข้าสู่ระบบ (เชื่อม API)
-  // ฟังก์ชันเข้าสู่ระบบ (เชื่อม API)
-const handleLogin = async () => {
-  let hasError = false;
+  const handleLogin = async () => {
+    let hasError = false;
+    setEmailError(false);
+    setPasswordError(false);
 
-  // รีเซ็ต error ทั้ง 2 ช่อง ก่อนตรวจสอบ
-  setEmailError(false);
-  setPasswordError(false);
+    if (!email) {
+      setEmailError(true);
+      hasError = true;
+    }
+    if (!password) {
+      setPasswordError(true);
+      hasError = true;
+    }
 
-  // ตรวจสอบอีเมล
-  if (!email) {
-    setEmailError(true);
-    hasError = true;
-  }
-  // ตรวจสอบรหัสผ่าน
-  if (!password) {
-    setPasswordError(true);
-    hasError = true;
-  }
+    if (hasError) return;
 
-  // ถ้ามี error ให้หยุดทำงาน (ไม่เรียก API)
-  if (hasError) {
-    return;
-  }
+    setLoading(true);
+    try {
+      const response = await fetch("http://192.168.1.10:5000/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await response.json();
+      setLoading(false);
 
-  setLoading(true);
-  try {
-    const response = await fetch("http://192.168.133.111:5000/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await response.json();
-    setLoading(false);
+      if (!response.ok) {
+        // สมมุติว่า API ส่งกลับข้อความ error ใน data.message
+        if (data.message === "ไม่พบอีเมลนี้") {
+          setEmailError(true);
+          showAlert("ไม่พบอีเมลนี้");
+        } else if (data.message === "รหัสผ่านไม่ถูกต้อง") {
+          setPasswordError(true);
+          showAlert("รหัสผ่านไม่ถูกต้อง");
+        } else {
+          showAlert("เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
+        }
+        return;
+      }
 
-    if (!response.ok) {
-      // ถ้าการตอบกลับจากเซิร์ฟเวอร์ไม่โอเค (เช่น 400, 401, 500)
-      // ให้แสดง error ที่ input อีกครั้ง
+      // ตรวจสอบและดึง member_id จาก data.member
+      const memberId = data.member && data.member.member_id;
+      if (!memberId) {
+        throw new Error("member_id is undefined in response");
+      }
+
+      await AsyncStorage.setItem("member_id", memberId.toString());
+
+      // นำทางไปที่หน้า Main หรือ Home
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "MemberNavigator" }],
+      });
+    } catch (error) {
+      setLoading(false);
+      console.error("Login error:", error);
       setEmailError(true);
       setPasswordError(true);
-      return;
+      showAlert("เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
     }
-
-    // ตรวจสอบและดึง member_id จาก data.member
-    const memberId = data.member && data.member.member_id;
-    if (!memberId) {
-      throw new Error("member_id is undefined in response");
-    }
-
-    // ถ้าสำเร็จ -> เก็บ member_id ใน AsyncStorage
-    await AsyncStorage.setItem("member_id", memberId.toString());
-
-    // นำทางไปที่หน้า Main หรือ Home
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "MemberNavigator" }],
-    });
-  } catch (error) {
-    setLoading(false);
-    console.error("Login error:", error);
-    // ถ้าต้องการให้ช่องแสดงสีแดงเพราะเชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ก็ set error ได้เลย
-    setEmailError(true);
-    setPasswordError(true);
-  }
-};
+  };
 
   return (
-    <LinearGradient colors={["#1E1E1E", "#111111"]} style={styles.container}>
-      <StatusBar style="light" />
-
-      {/* -----------------------------
-          ส่วนหัว (Logo + Title)
-          ----------------------------- */}
-      <View style={styles.headerContainer}>
-        {/* ปุ่มย้อนกลับ (Back Arrow) */}
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <AntDesign name="arrowleft" size={24} color="#fff" />
-        </TouchableOpacity>
-
-        <Image
-          style={styles.logo}
-          source={require("../../../assets/images/logo.png")}
-        />
-        <Text style={styles.title}>ยินดีต้อนรับกลับมา</Text>
-        <Text style={styles.subtitle}>ลงชื่อเข้าใช้บัญชีของคุณ</Text>
-      </View>
-
-      {/* -----------------------------
-          ส่วนฟอร์ม (เลื่อนได้)
-          ----------------------------- */}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar style="dark-content" />
       <KeyboardAvoidingView
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.formContainer}
       >
-        {/* กดที่พื้นที่ว่าง ซ่อนคีย์บอร์ด */}
+        {/* ปุ่มย้อนกลับ */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <AntDesign name="arrowleft" size={24} color="#000" />
+        </TouchableOpacity>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
+            bounces={false}
             showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
           >
+            {/* โลโก้ (รูปวงกลมสีแดง + นก) */}
+            <Image
+              source={require("../../../assets/images/logo-x.png")}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+
+            {/* หัวข้อ */}
+            <Text style={styles.title}>ล็อกอินเข้าสู่ระบบ</Text>
+
             {/* ช่องกรอก Email */}
             <View
               style={[
@@ -148,22 +148,20 @@ const handleLogin = async () => {
                 emailError && styles.inputContainerError,
               ]}
             >
+              <AntDesign
+                name="mail"
+                size={20}
+                color={emailError ? "red" : "#666"}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="อีเมล"
-                placeholderTextColor="#777"
+                placeholderTextColor="#aaa"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
               />
-              {emailError && (
-                <AntDesign
-                  name="exclamationcircle"
-                  size={20}
-                  color="red"
-                  style={styles.errorIcon}
-                />
-              )}
             </View>
 
             {/* ช่องกรอก Password */}
@@ -173,161 +171,200 @@ const handleLogin = async () => {
                 passwordError && styles.inputContainerError,
               ]}
             >
+              <AntDesign
+                name="lock"
+                size={20}
+                color={passwordError ? "red" : "#666"}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="รหัสผ่าน"
-                placeholderTextColor="#777"
+                placeholderTextColor="#aaa"
                 value={password}
                 onChangeText={setPassword}
-                secureTextEntry={hidePassword} // ใช้ state hidePassword
+                secureTextEntry={hidePassword}
               />
-              {/* ปุ่ม Toggle แสดง/ซ่อนรหัสผ่าน */}
               <TouchableOpacity onPress={togglePasswordVisibility}>
                 <AntDesign
                   name={hidePassword ? "eyeo" : "eye"}
                   size={20}
-                  color="#777"
+                  color="#666"
                   style={styles.icon}
                 />
               </TouchableOpacity>
-
-              {passwordError && (
-                <AntDesign
-                  name="exclamationcircle"
-                  size={20}
-                  color="red"
-                  style={styles.errorIcon}
-                />
-              )}
             </View>
 
-            {/* ปุ่ม "เข้าสู่ระบบ" */}
+            {/* ปุ่มเข้าสู่ระบบ */}
             <TouchableOpacity
               style={styles.loginButton}
               onPress={handleLogin}
               disabled={loading}
             >
-              <Text style={styles.loginText}>
+              <Text style={styles.loginButtonText}>
                 {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
               </Text>
             </TouchableOpacity>
 
-            {/* ลิงก์ "สร้างบัญชี" */}
+            {/* ลิงก์สมัครสมาชิก */}
             <View style={styles.registerContainer}>
-              <Text style={styles.registerText}>คุณยังไม่มีบัญชี ?</Text>
+              <Text style={styles.registerText}>ยังไม่มีบัญชี? </Text>
               <TouchableOpacity onPress={() => navigation.navigate("Signup")}>
-                <Text style={styles.registerLink}> สร้างบัญชี</Text>
+                <Text style={styles.registerLink}>สมัคร</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
-    </LinearGradient>
+
+      {/* Custom Alert */}
+      {customAlert.visible && (
+        <View style={styles.alertOverlay}>
+          <View style={styles.alertContainer}>
+            <Text style={styles.alertMessage}>{customAlert.message}</Text>
+            <TouchableOpacity
+              onPress={() => setCustomAlert({ visible: false, message: "" })}
+              style={styles.alertButton}
+            >
+              <Text style={styles.alertButtonText}>ตกลง</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
+    backgroundColor: "#FFF", // พื้นหลังสีขาว
   },
-  headerContainer: {
+  scrollContent: {
+    flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 50,
-    paddingBottom: 20,
     paddingHorizontal: 20,
-    backgroundColor: "transparent",
+    paddingTop: 40,
+    paddingBottom: 40,
   },
   backButton: {
     position: "absolute",
-    top: 50,
+    top: 40,
     left: 20,
-    padding: 10,
+    zIndex: 10,
   },
+  // โลโก้ (รูปวงกลมสีแดง + นก)
   logo: {
-    width: 120,
-    height: 120,
-    resizeMode: "contain",
-    marginBottom: 15,
-    marginTop: 50,
+    width: 200,
+    height: 200,
+    marginBottom: 10,
   },
+  // ข้อความหัวข้อ
   title: {
-    fontSize: 28,
+    fontSize: 20,
     fontFamily: "Prompt-Bold",
-    color: "#FFF",
-    marginBottom: 5,
-    textAlign: "center",
+    color: "#000",
+    marginBottom: 20,
   },
-  subtitle: {
-    fontSize: 18,
-    fontFamily: "Prompt-Regular",
-    color: "#AAA",
-    textAlign: "center",
-  },
-  /* -----------------------------------
-     ส่วนฟอร์ม
-     ----------------------------------- */
-  formContainer: {
-    flex: 1,
-    backgroundColor: "transparent",
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 40,
-  },
+  // กล่องกรอกข้อมูล
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#222",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    marginBottom: 15,
+    backgroundColor: "#FFF",
+    borderColor: "#ddd",
     borderWidth: 1,
-    borderColor: "transparent",
-    borderRadius: 50,
+    borderRadius: 5,
+    paddingHorizontal: 14,
+    marginBottom: 15,
+    width: "100%",
   },
-  inputContainerError: {
-    borderColor: "red",
+  inputIcon: {
+    marginRight: 8,
   },
   input: {
     flex: 1,
     fontSize: 16,
-    fontFamily: "Prompt-Regular",
-    color: "#FFF",
+    color: "#000",
+    paddingVertical: 14,
+    fontFamily: "Prompt-Medium",
   },
   icon: {
-    marginLeft: 10,
-  },
-  errorIcon: {
     marginLeft: 8,
   },
+  inputContainerError: {
+    borderColor: "red",
+  },
+  // ปุ่มเข้าสู่ระบบ
   loginButton: {
-    backgroundColor: "#FFF",
-    paddingVertical: 18,
-    paddingHorizontal: 10,
-    borderRadius: 50,
+    backgroundColor: "#FF0000",
+    borderRadius: 5,
+    width: "100%",
     alignItems: "center",
+    paddingVertical: 14,
     marginTop: 10,
   },
-  loginText: {
-    color: "#000",
-    fontFamily: "Prompt-Bold",
+  loginButtonText: {
+    color: "#FFF",
     fontSize: 16,
+    fontFamily: "Prompt-Medium",
   },
+  // ลิงก์สมัครสมาชิก
   registerContainer: {
     flexDirection: "row",
-    justifyContent: "center",
     marginTop: 20,
   },
   registerText: {
-    fontFamily: "Prompt-Regular",
-    fontSize: 16,
-    color: "#AAA",
+    fontSize: 15,
+    color: "#000",
+    fontFamily: "Prompt-Medium",
   },
   registerLink: {
-    fontFamily: "Prompt-Bold",
+    fontSize: 15,
+    color: "#FF0000",
+    fontFamily: "Prompt-Medium",
+    textDecorationLine: "underline",
+  },
+  // Custom Alert Styles
+  alertOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 20,
+  },
+  alertContainer: {
+    backgroundColor: "#FFF",
+    borderRadius: 8,
+    padding: 20,
+    alignItems: "center",
+    width: "80%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  alertMessage: {
     fontSize: 16,
+    color: "#000",
+    fontFamily: "Prompt-Medium",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  alertButton: {
+    backgroundColor: "#FF0000",
+    borderRadius: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  alertButtonText: {
     color: "#FFF",
+    fontSize: 16,
+    fontFamily: "Prompt-Medium",
   },
 });

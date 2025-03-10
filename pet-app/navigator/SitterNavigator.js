@@ -1,41 +1,40 @@
+// navigator/SitterNavigator.js
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { AntDesign, Ionicons } from '@expo/vector-icons';
-
-// Import components สำหรับแต่ละหน้าที่คุณต้องการให้แสดง
+import { AntDesign } from '@expo/vector-icons';
 import Home from '../screens/Sitter/Home';
-import AddService from '../screens/Sitter/AddService';
-import Setting from '../screens/Sitter/Setting';
 import Jobs from '../screens/Sitter/Jobs';
+import AddJob from '../screens/Sitter/AddService';
+import Setting from '../screens/Sitter/Setting';
+import { View, StyleSheet } from 'react-native';
 
 const Tab = createBottomTabNavigator();
 
-const BottomTabNavigator = () => {
+export default function SitterNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarShowLabel: false, // ไม่แสดงชื่อเมนู
         tabBarStyle: {
-          height: 75, // ปรับความสูงของ Bottom Tab
-          backgroundColor: '#000', // สีพื้นหลัง Bottom Tab
+          height: 50,            // ความสูงของ Tab Bar
+          backgroundColor: '#fff',
           borderTopColor: 'transparent',
           borderTopWidth: 0,
-          elevation: 0,
-          paddingBottom: 10,
+          // shadow
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.1,
+          shadowRadius: 3,
+          elevation: 5,
         },
-        tabBarLabelStyle: {
-          fontSize: 10, // ขนาดตัวอักษรของ Label
-          fontFamily: 'Prompt-Medium', // ใช้ฟอนต์ Prompt
-          paddingBottom: 5, // ขยับตัวหนังสือให้อยู่ตรงกลางมากขึ้น
+        // กำหนดให้แต่ละ Item ใน Tab Bar จัดกึ่งกลาง
+        tabBarItemStyle: {
+          alignItems: 'center',
+          justifyContent: 'center',
         },
-        tabBarIconStyle: {
-          marginTop: 10, // ทำให้ไอคอนอยู่ตรงกลางของ Bottom Tab
-        },
-        tabBarActiveTintColor: '#1E1', // สีไอคอนที่ถูกเลือก
-        tabBarInactiveTintColor: '#fff', // สีไอคอนที่ไม่ได้เลือก
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-
+        tabBarIcon: ({ color, size, focused }) => {
+          let iconName = '';
           if (route.name === 'หน้าแรก') {
             iconName = 'home';
           } else if (route.name === 'คำขอ') {
@@ -45,25 +44,44 @@ const BottomTabNavigator = () => {
           } else if (route.name === 'การตั้งค่า') {
             iconName = 'setting';
           }
-
           return (
-            <AntDesign
-              name={iconName}
-              size={size}
-              color={color}
-              style={{ alignSelf: 'center' }} // ทำให้ไอคอนอยู่ตรงกลาง
-            />
+            <View
+              style={{
+                backgroundColor: focused ? '#E52020' : 'transparent',
+                width: 80,
+                height: 40,
+                borderRadius: 30,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <AntDesign
+                name={iconName}
+                size={size}
+                color={focused ? '#fff' : color}
+              />
+            </View>
           );
         },
       })}
     >
-      <Tab.Screen name="หน้าแรก" component={Home} options={{ headerShown: false }}/>
-      <Tab.Screen name="คำขอ" component={Jobs} options={{ headerShown: false }}/>
-      <Tab.Screen name="เพิ่มงาน" component={AddService} options={{ headerShown: false }}/>
-      <Tab.Screen name="การตั้งค่า" component={Setting} options={{ headerShown: false }}/>
-     
+      <Tab.Screen name="หน้าแรก" component={Home} />
+      <Tab.Screen name="คำขอ" component={Jobs} />
+      <Tab.Screen name="เพิ่มงาน" component={AddJob} />
+      <Tab.Screen name="การตั้งค่า" component={Setting} />
     </Tab.Navigator>
   );
-};
+}
 
-export default BottomTabNavigator;
+const styles = StyleSheet.create({
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconContainerActive: {
+    backgroundColor: '#E52020',
+  },
+});

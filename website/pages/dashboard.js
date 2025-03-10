@@ -1,5 +1,4 @@
-// pages/dashboard.js
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import swal from "sweetalert";
 import CountUp from "react-countup";
@@ -8,9 +7,9 @@ import Sidebar from "../components/Sidebar";
 export default function Dashboard() {
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedRegistration, setSelectedRegistration] = useState(null); // สำหรับ modal ตรวจสอบ
+  const [selectedRegistration, setSelectedRegistration] = useState(null);
 
-  // Mapping สถานะจาก verification_status เป็นภาษาไทย
+  // Mapping สถานะเป็นภาษาไทย
   const statusMapping = {
     pending: "รอตรวจสอบ",
     approved: "อนุมัติ",
@@ -20,7 +19,7 @@ export default function Dashboard() {
   // ดึงข้อมูลพี่เลี้ยงจาก API
   useEffect(() => {
     axios
-      .get("http://192.168.133.111:5000/api/admin/get-all-sitters")
+      .get("http://192.168.1.10:5000/api/admin/get-all-sitters")
       .then((res) => {
         if (res.data && res.data.registrations) {
           setRegistrations(res.data.registrations);
@@ -55,11 +54,9 @@ export default function Dashboard() {
 
   // ฟังก์ชันสำหรับจัดการสถานะ (Approve/Reject)
   const handleManage = async (decision) => {
-    // decision: 'approved' หรือ 'rejected'
     try {
-      // เรียก API เพื่อ update สถานะพี่เลี้ยง
       const response = await axios.post(
-        "http://192.168.133.111:5000/api/admin/update-sitter-status",
+        "http://192.168.1.10:5000/api/admin/update-sitter-status",
         {
           sitter_id: selectedRegistration.sitter_id,
           status: decision,
@@ -67,7 +64,6 @@ export default function Dashboard() {
       );
       if (response.data && response.data.sitter) {
         swal("Success", `สถานะถูกเปลี่ยนเป็น ${statusMapping[decision]}`, "success");
-        // อัปเดต state registrations ด้วยข้อมูลที่เปลี่ยนแปลง
         setRegistrations((prevRegs) =>
           prevRegs.map((reg) =>
             reg.sitter_id === selectedRegistration.sitter_id
@@ -146,9 +142,9 @@ export default function Dashboard() {
               <div style={styles.modalImages}>
                 <div>
                   <p>รูปใบหน้า</p>
-                  {selectedRegistration.face_image ? (
+                  {selectedRegistration.face_image_url ? (
                     <img
-                      src={selectedRegistration.face_image}
+                      src={selectedRegistration.face_image_url}
                       alt="Face"
                       style={styles.modalImage}
                     />
@@ -158,9 +154,9 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <p>รูปบัตรประชาชน</p>
-                  {selectedRegistration.id_card_image ? (
+                  {selectedRegistration.id_card_image_url ? (
                     <img
-                      src={selectedRegistration.id_card_image}
+                      src={selectedRegistration.id_card_image_url}
                       alt="ID Card"
                       style={styles.modalImage}
                     />
@@ -312,4 +308,5 @@ const styles = {
     cursor: "pointer",
   },
 };
+
 

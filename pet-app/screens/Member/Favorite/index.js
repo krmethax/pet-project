@@ -4,16 +4,21 @@ import {
   View,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
+  RefreshControl,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import { AntDesign } from '@expo/vector-icons';
 
 export default function Favorite() {
   const navigation = useNavigation();
-  const [user, setUser] = useState(null);
   const [memberId, setMemberId] = useState(null);
+  const [favorites, setFavorites] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ดึง member_id จาก AsyncStorage เมื่อ component mount
   useEffect(() => {
@@ -33,80 +38,96 @@ export default function Favorite() {
     getMemberId();
   }, []);
 
-  // ดึงข้อมูลผู้ใช้งานเมื่อได้ memberId
-  useEffect(() => {
-    if (memberId) {
-      fetch(`http://192.168.133.111:5000/api/auth/member/${memberId}`)
-        .then(async (response) => {
-          if (!response.ok) {
-            const text = await response.text();
-            console.log('Response status:', response.status);
-            console.log('Response text:', text);
-            throw new Error('ไม่สามารถดึงข้อมูลผู้ใช้งานได้');
-          }
-          return response.json();
-        })
-        .then((data) => {
-          console.log('data from server:', data);
-          // สมมติ data.member คือโครงสร้างสำหรับ user
-          if (data.member) {
-            setUser(data.member);
-          } else {
-            setUser(data); // ปรับตามโครงสร้างจริง
-          }
-        })
-        .catch((error) => {
-          console.error('Error fetching user:', error);
-        });
+  // ดึงรายการ Favorite Sitters ของสมาชิก
+  const fetchFavorites = async () => {
+    if (!memberId) return;
+    try {
+      const response = await fetch(`http://192.168.1.10:5000/api/auth/favorite/${memberId}`);
+      const data = await response.json();
+      if (response.ok) {
+        // สมมติว่า API ส่งกลับมาเป็น { favorites: [...] }
+        setFavorites(data.favorites || []);
+      } else {
+        console.error('Error fetching favorites:', data.message);
+      }
+    } catch (error) {
+      console.error('Error fetching favorites:', error);
     }
+  };
+
+  useEffect(() => {
+    fetchFavorites();
   }, [memberId]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchFavorites();
+    setRefreshing(false);
+  };
+
+  // นำทางไปยังหน้า Profile ของพี่เลี้ยงเมื่อกดที่รายการ Favorite
+  const handleNavigateToSitter = (sitter_id) => {
+    navigation.navigate('ProfileSitter', { sitter_id });
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <StatusBar style="dark" />
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContainer}
-        >
-          {/* ไม่มี Header: ไม่แสดง Avatar, ชื่อ, Logout */}
-          
-          {/* ส่วน Content หลัก */}
-          <View style={styles.mainContent}>
-            <Text style={styles.title}>รายการโปรด</Text>
-            {/* ส่วนนี้จะใส่ลิสต์รายการโปรด หรือฟีเจอร์อื่น ๆ ได้ตามต้องการ */}
-          </View>
-        </ScrollView>
-      </View>
+      <StatusBar style="dark" />
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.title}>รายการโปรด</Text>
+        {favorites.length === 0 ? (
+          <Text style={styles.infoText}>ไม่มีพี่เลี้ยงที่ถูกใจ</Text>
+        ) : (
+          favorites.map((fav) => (
+            <TouchableOpacity
+              key={fav.favorite_id}
+              style={styles.favoriteItem}
+              onPress={() => handleNavigateToSitter(fav.sitter_id)}
+            >
+              <View style={styles.avatar}>
+                {fav.profile_image ? (
+                  <Image source={{ uri: fav.profile_image }} style={styles.avatarImage} />
+                ) : (
+                  <AntDesign name="user" size={24} color="#000" />
+                )}
+              </View>
+              <Text style={styles.sitterName}>
+                {fav.first_name} {fav.last_name}
+              </Text>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFF', // พื้นหลังขาว
+  safeArea: { flex: 1, backgroundColor: "#FFF" },
+  scrollContainer: { padding: 20 },
+  title: { fontSize: 18, fontFamily: "Prompt-Bold", color: "#000", marginBottom: 10 },
+  infoText: { fontSize: 16, fontFamily: "Prompt-Regular", color: "#333" },
+  favoriteItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 15,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
   },
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF',
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 15,
   },
-  scrollContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  mainContent: {
-    marginTop: 10,
-  },
-  title: {
-    fontSize: 18,
-    fontFamily: 'Prompt-Bold',
-    color: '#000',
-    marginBottom: 10,
-  },
-  infoText: {
-    fontSize: 16,
-    fontFamily: 'Prompt-Regular',
-    color: '#333',
-  },
+  avatarImage: { width: 50, height: 50, borderRadius: 25 },
+  sitterName: { fontSize: 16, fontFamily: "Prompt-Regular", color: "#000" },
 });

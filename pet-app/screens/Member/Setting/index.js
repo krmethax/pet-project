@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,7 +38,7 @@ export default function Setting() {
   // ดึงข้อมูลผู้ใช้งานเมื่อได้ memberId
   useEffect(() => {
     if (memberId) {
-      fetch(`http://192.168.133.111:5000/api/auth/member/${memberId}`)
+      fetch(`http://192.168.1.10:5000/api/auth/member/${memberId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -49,11 +50,10 @@ export default function Setting() {
         })
         .then((data) => {
           console.log('data from server:', data);
-          // สมมติ data.member คือโครงสร้างสำหรับ user
           if (data.member) {
             setUser(data.member);
           } else {
-            setUser(data); // ปรับตามโครงสร้างจริง
+            setUser(data);
           }
         })
         .catch((error) => {
@@ -70,35 +70,66 @@ export default function Setting() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar style="dark" />
       <View style={styles.container}>
-        <StatusBar style="dark" />
+        {/* ส่วนแสดงรายการเมนูและข้อมูลผู้ใช้ */}
         <ScrollView
+          style={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContainer}
+          contentContainerStyle={styles.scrollContent}
         >
-          <View style={styles.mainContent}>
-            <Text style={styles.title}>การตั้งค่า</Text>
-
-            {/* Card แสดงข้อมูลผู้ใช้ */}
-            {user ? (
-              <View style={styles.userCard}>
-                <Text style={styles.userCardName}>
+          <Text style={styles.headerTitle}>ตั้งค่า</Text>
+          
+          {/* ส่วนแสดงข้อมูลผู้ใช้ */}
+          {user ? (
+            <View style={styles.userInfoContainer}>
+              <Image
+                source={
+                  user.profile_image
+                    ? { uri: user.profile_image }
+                    : require('../../../assets/images/avatar.png')
+                }
+                style={styles.avatar}
+              />
+              <View style={styles.userTextContainer}>
+                <Text style={styles.userName}>
                   {user.first_name?.trim()} {user.last_name?.trim()}
                 </Text>
-                <Text style={styles.userCardEmail}>
-                  {user.email}
-                </Text>
+                <Text style={styles.userEmail}>{user.email}</Text>
               </View>
-            ) : (
-              <Text style={styles.infoText}>กำลังโหลดข้อมูลผู้ใช้...</Text>
-            )}
+            </View>
+          ) : (
+            <Text style={styles.loadingText}>กำลังโหลดข้อมูลผู้ใช้...</Text>
+          )}
 
-            {/* ปุ่ม Logout */}
-            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-              <Text style={styles.logoutButtonText}>ออกจากระบบ</Text>
-            </TouchableOpacity>
-          </View>
+          {/* รายการเมนู (ไม่มี >) */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              console.log('ไปยังหน้าบัญชี');
+              // navigation.navigate('Account');
+            }}
+          >
+            <Text style={styles.menuText}>บัญชี</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              console.log('ไปยังหน้าการแจ้งเตือน');
+              // navigation.navigate('NotificationSetting');
+            }}
+          >
+            <Text style={styles.menuText}>การแจ้งเตือน</Text>
+          </TouchableOpacity>
         </ScrollView>
+
+        {/* ปุ่ม Logout อยู่ด้านล่าง */}
+        <View style={styles.bottomContainer}>
+          <TouchableOpacity style={styles.menuItemLogout} onPress={handleLogout}>
+            <Text style={styles.menuTextLogout}>ออกจากระบบ</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -107,59 +138,80 @@ export default function Setting() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#FFF', // พื้นหลังขาว
+    backgroundColor: '#FFF',
   },
   container: {
     flex: 1,
-    backgroundColor: '#FFF',
   },
   scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 20,
-    paddingBottom: 40,
   },
-  mainContent: {
-    marginTop: 10,
-  },
-  title: {
+  headerTitle: {
     fontSize: 18,
     fontFamily: 'Prompt-Bold',
     color: '#000',
     marginBottom: 20,
   },
-  // Card แสดงข้อมูลผู้ใช้
-  userCard: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 20,
+  userInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 30,
   },
-  userCardName: {
-    fontSize: 16,
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 15,
+    resizeMode: 'cover',
+  },
+  userTextContainer: {
+    justifyContent: 'center',
+  },
+  userName: {
+    fontSize: 20,
     fontFamily: 'Prompt-Bold',
     color: '#000',
-    marginBottom: 5,
+    marginBottom: 2,
   },
-  userCardEmail: {
-    fontSize: 14,
+  userEmail: {
+    fontSize: 16,
     fontFamily: 'Prompt-Regular',
-    color: '#333',
+    color: '#000',
   },
-  infoText: {
+  loadingText: {
     fontSize: 16,
     fontFamily: 'Prompt-Regular',
     color: '#333',
-    marginBottom: 20,
+    marginBottom: 30,
   },
-  // ปุ่ม Logout
-  logoutButton: {
-    backgroundColor: '#000',
-    paddingVertical: 10,
-    borderRadius: 8,
+  menuItem: {
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#ccc',
+    marginBottom: 15,
+  },
+  menuText: {
+    fontSize: 16,
+    fontFamily: 'Prompt-Medium',
+    color: '#000',
+  },
+  bottomContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  menuItemLogout: {
+    backgroundColor: '#FF0000',
+    borderRadius: 5,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  logoutButtonText: {
-    color: '#FFF',
+  menuTextLogout: {
+    fontSize: 16,
     fontFamily: 'Prompt-Bold',
-    fontSize: 14,
+    color: '#FFF',
   },
 });

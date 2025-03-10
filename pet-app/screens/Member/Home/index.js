@@ -5,31 +5,35 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Image,
   RefreshControl,
+  Image,
   Modal,
+  Dimensions,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AntDesign } from "@expo/vector-icons";
+import { AntDesign, FontAwesome } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const scale = SCREEN_WIDTH / 375;
 
 export default function Home() {
   const navigation = useNavigation();
 
-  // States สำหรับข้อมูลผู้ใช้และงาน
+  // States
   const [user, setUser] = useState(null);
   const [memberId, setMemberId] = useState(null);
-  const [sitterServices, setSitterServices] = useState([]); // งานของพี่เลี้ยง
-  const [serviceTypes, setServiceTypes] = useState([]); // ประเภทบริการ
-  const [petCategories, setPetCategories] = useState([]); // หมวดหมู่สัตว์เลี้ยง
+  const [sitters, setSitters] = useState([]); // ข้อมูลพี่เลี้ยงทั้งหมด
+  const [serviceTypes, setServiceTypes] = useState([]); // ประเภทงาน
   const [refreshing, setRefreshing] = useState(false);
 
-  // States สำหรับฟิลเตอร์
-  const [selectedPetCategory, setSelectedPetCategory] = useState(null);
-  const [selectedServiceType, setSelectedServiceType] = useState(null);
-  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  // Multi‑Select filter states (เลือกประเภทงาน)
+  const [selectedServiceTypes, setSelectedServiceTypes] = useState([]);
+
+  // Modal visibility สำหรับเลือกประเภทงานเพิ่มเติม
+  const [modalVisible, setModalVisible] = useState(false);
 
   // ดึง memberId จาก AsyncStorage เมื่อ component mount
   useEffect(() => {
@@ -46,544 +50,392 @@ export default function Home() {
     getMemberId();
   }, []);
 
-  // ดึงข้อมูลผู้ใช้งาน
+  // ดึงข้อมูลผู้ใช้ (Header)
   const fetchUser = useCallback(() => {
-    if (memberId) {
-      fetch(`http://192.168.133.111:5000/api/auth/member/${memberId}`)
-        .then(async (response) => {
-          if (!response.ok) {
-            const text = await response.text();
-            console.log("Response status:", response.status);
-            console.log("Response text:", text);
-            throw new Error("ไม่สามารถดึงข้อมูลผู้ใช้งานได้");
-          }
-          return response.json();
-        })
-        .then((data) => {
-          console.log("User data:", data);
-          setUser(data);
-        })
-        .catch((error) => {
-          console.error("Error fetching user:", error);
-        });
-    }
+    if (!memberId) return;
+    fetch(`http://192.168.1.10:5000/api/auth/member/${memberId}`)
+      .then((res) => res.json())
+      .then((data) => setUser(data))
+      .catch((err) => console.error("Error fetching user:", err));
   }, [memberId]);
 
-  // ดึงข้อมูลประเภทบริการจาก API
+  // ดึงข้อมูลพี่เลี้ยงทั้งหมด
+  const fetchSitters = useCallback(() => {
+    fetch("http://192.168.1.10:5000/api/auth/sitters")
+      .then((res) => res.json())
+      .then((data) => setSitters(data.sitters || []))
+      .catch((err) => console.error("Error fetching sitters:", err));
+  }, []);
+
+  // ดึงข้อมูลประเภทงาน (serviceTypes)
   const fetchServiceTypes = useCallback(() => {
-    fetch("http://192.168.133.111:5000/api/auth/service-type")
-      .then(async (response) => {
-        if (!response.ok) {
-          console.error("ไม่สามารถดึงประเภทบริการได้");
-          return;
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log("Fetched service types:", data);
-        if (Array.isArray(data)) {
-          setServiceTypes(data);
-        } else {
-          setServiceTypes(data.serviceTypes || []);
-        }
-      })
-      .catch((error) => {
-        console.error("Error fetching service types:", error);
-      });
-  }, []);
-
-  // ดึงข้อมูลหมวดหมู่สัตว์เลี้ยงจาก API
-  const fetchPetCategories = useCallback(() => {
-    fetch("http://192.168.133.111:5000/api/auth/pet-categories")
-      .then(async (response) => {
-        if (!response.ok) {
-          console.error("ไม่สามารถดึงหมวดหมู่สัตว์เลี้ยงได้");
-          return;
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log("Fetched pet categories:", data);
-        if (Array.isArray(data)) {
-          setPetCategories(data);
-        } else if (data && data.petCategories && Array.isArray(data.petCategories)) {
-          setPetCategories(data.petCategories);
-        } else {
-          console.error("รูปแบบข้อมูลที่ได้รับไม่ถูกต้อง", data);
-          setPetCategories([]);
-        }
-      })
-      .catch((error) => {
-        console.error("Error fetching pet categories:", error);
-      });
-  }, []);
-
-  // ดึงงานของพี่เลี้ยงจาก API
-  const fetchSitterServices = useCallback(() => {
-    fetch("http://192.168.133.111:5000/api/auth/sitter-services")
-      .then(async (response) => {
-        if (!response.ok) {
-          console.error("ไม่สามารถดึงงานของพี่เลี้ยงได้");
-          return;
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log("Fetched sitter services:", data);
-        if (Array.isArray(data)) {
-          setSitterServices(data);
-        } else {
-          setSitterServices(data.services || []);
-        }
-      })
-      .catch((error) => {
-        console.error("Error fetching sitter services:", error);
-      });
+    fetch("http://192.168.1.10:5000/api/auth/service-type")
+      .then((res) => res.json())
+      .then((data) => setServiceTypes(data.serviceTypes || []))
+      .catch((err) => console.error("Error fetching service types:", err));
   }, []);
 
   // ดึงข้อมูลทั้งหมด
   const fetchAllData = useCallback(() => {
-    if (memberId) {
-      fetchUser();
-    }
+    if (memberId) fetchUser();
+    fetchSitters();
     fetchServiceTypes();
-    fetchPetCategories();
-    fetchSitterServices();
-  }, [memberId, fetchUser, fetchServiceTypes, fetchPetCategories, fetchSitterServices]);
+  }, [memberId, fetchUser, fetchSitters, fetchServiceTypes]);
 
   useEffect(() => {
-    if (memberId) {
-      fetchAllData();
-    }
-  }, [memberId, fetchAllData]);
+    fetchAllData();
+  }, [fetchAllData]);
 
-  // ฟังก์ชันรีเฟรชหน้าจอ
+  // ฟังก์ชัน Refresh
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchAllData();
     setRefreshing(false);
   }, [fetchAllData]);
 
-  // ฟังก์ชัน Logout
-  const handleLogout = async () => {
-    await AsyncStorage.removeItem("member_id");
-    navigation.replace("Login");
-  };
+  // กรองพี่เลี้ยงตามประเภทงานและจังหวัดของสมาชิก (ถ้ามีข้อมูล)
+  const filteredSitters = useMemo(() => {
+    return sitters.filter((s) => {
+      const serviceMatch =
+        selectedServiceTypes.length === 0 ||
+        selectedServiceTypes.includes(s.service_type_id);
+      const provinceMatch =
+        user &&
+        user.member &&
+        user.member.province &&
+        s.province &&
+        s.province.toLowerCase().trim() === user.member.province.toLowerCase().trim();
+      return serviceMatch && provinceMatch;
+    });
+  }, [sitters, selectedServiceTypes, user]);
 
-  // ฟังก์ชันเปิด Modal ฟิลเตอร์
-  const openFilterModal = () => {
-    setFilterModalVisible(true);
-  };
-
-  // ฟังก์ชันปิด Modal ฟิลเตอร์
-  const closeFilterModal = () => {
-    setFilterModalVisible(false);
-  };
-
-  // ฟังก์ชันล้างฟิลเตอร์
-  const resetFilters = () => {
-    setSelectedPetCategory(null);
-    setSelectedServiceType(null);
-  };
-
-  // เมื่อกด "ตกลง" ใน Modal ให้ปิด Modal
-  const handleConfirmFilter = () => {
-    closeFilterModal();
-  };
-
-  // คำนวณ filteredServices ตามฟิลเตอร์ที่เลือก
-  const filteredServices = useMemo(() => {
-    let services = sitterServices;
-    if (selectedPetCategory) {
-      services = services.filter(
-        (service) => service.pet_type_id === selectedPetCategory
-      );
+  // คำนวณ jobTypesToShow สำหรับกริดหน้าจอ
+  const jobTypesToShow = useMemo(() => {
+    // คัดลอกข้อมูลประเภทงานทั้งหมด
+    let arr = [...serviceTypes];
+    // หากมีมากกว่า 7 รายการ ให้นำรายการที่ 6 (index 5) มาแทนที่ด้วย object ที่ระบุว่าเป็น "more"
+    if (arr.length > 7) {
+      arr.splice(5, 0, { more: true });
     }
-    if (selectedServiceType) {
-      services = services.filter(
-        (service) => service.service_type_id === selectedServiceType
-      );
-    }
-    return services;
-  }, [selectedPetCategory, selectedServiceType, sitterServices]);
+    return arr;
+  }, [serviceTypes]);
+
+  // Navigation to sitter profile
+  const handleNavigateToProfileSitter = (sitterId) => {
+    navigation.navigate("ProfileSitter", { sitter_id: sitterId });
+  };
+
+  // Toggle Service Type (ประเภทงาน)
+  const toggleServiceType = (serviceTypeId) => {
+    setSelectedServiceTypes((prev) =>
+      prev.includes(serviceTypeId)
+        ? prev.filter((id) => id !== serviceTypeId)
+        : [...prev, serviceTypeId]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <StatusBar style="light" />
-        <ScrollView
-          contentContainerStyle={styles.scrollContainer}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.profileSection}>
-              <View style={styles.avatar}>
-                <AntDesign name="user" size={24} color="#6A0DAD" />
-              </View>
-              <View style={styles.greeting}>
-                <Text style={styles.greetingText}>
-                  {user ? `สวัสดี ${user.member.first_name}` : ""}
-                </Text>
-                <Text style={styles.subGreeting}>ยินดีต้อนรับ</Text>
-              </View>
+      <StatusBar style="dark" />
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.profileSection}>
+            <View style={styles.avatar}>
+              {user && user.member && user.member.profile_image ? (
+                <Image source={{ uri: user.member.profile_image }} style={styles.avatarImage} />
+              ) : (
+                <AntDesign name="user" size={24 * scale} color="#000" />
+              )}
             </View>
-            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-              <AntDesign name="logout" size={20} color="#FFCCCC" />
-            </TouchableOpacity>
-          </View>
-
-          {/* ปุ่มเปิด Modal ฟิลเตอร์ */}
-          <View style={styles.filterButtonContainer}>
-            <TouchableOpacity style={styles.filterButton} onPress={openFilterModal}>
-              <Text style={styles.filterButtonText}>
-                {selectedPetCategory || selectedServiceType
-                  ? `กรอง: ${
-                      petCategories.find(
-                        (c) => c.pet_type_id === selectedPetCategory
-                      )?.type_name ||
-                      serviceTypes.find(
-                        (s) => s.service_type_id === selectedServiceType
-                      )?.short_name
-                    }`
-                  : "ตัวกรอง"}
+            <View style={styles.greeting}>
+              <Text style={styles.greetingText}>สวัสดี</Text>
+              <Text style={styles.subGreeting}>
+                {user ? `${user.member.first_name} ${user.member.last_name}` : "ผู้เยี่ยมชม"}
               </Text>
-            </TouchableOpacity>
+            </View>
           </View>
+        </View>
 
-          {/* Services Section (แสดงงานของพี่เลี้ยงเป็น List) */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>บริการสำหรับสัตว์เลี้ยง</Text>
-            <TouchableOpacity>
-              <AntDesign name="filter" size={20} color="#4A148C" />
-            </TouchableOpacity>
-          </View>
-          {filteredServices.length > 0 ? (
-            <View style={styles.listContainer}>
-              {filteredServices.map((service) => (
-                <View key={service.sitter_service_id} style={styles.listItem}>
-                  <View style={styles.listItemInfo}>
-                    <Text style={styles.listItemTitle}>{service.short_name}</Text>
-                    <Text style={styles.listItemDescription}>
-                      {service.description || "ไม่มีรายละเอียด"}
-                    </Text>
-                  </View>
-                  <View style={styles.listItemPrice}>
-                    <Text style={styles.priceText}>
-                      {formatPrice(service.price)} บาท /{" "}
-                      {pricingUnitMapping[service.pricing_unit] || service.pricing_unit}
-                    </Text>
-                  </View>
+        {/* แสดงประเภทงานในรูปแบบกริด 2 แถว 4 วงกลมต่อแถว */}
+        <View style={styles.jobTypesContainer}>
+          {jobTypesToShow.map((job, index) => {
+            if (job.more) {
+              return (
+                <TouchableOpacity
+                  key="more"
+                  style={[styles.jobTypeCircle, styles.moreCircle]}
+                  onPress={() => setModalVisible(true)}
+                >
+                  <AntDesign name="ellipsis1" size={24 * scale} color="#FFF" />
+                </TouchableOpacity>
+              );
+            } else {
+              return (
+                <TouchableOpacity
+                  key={job.service_type_id}
+                  style={[
+                    styles.jobTypeCircle,
+                    selectedServiceTypes.includes(job.service_type_id) &&
+                      styles.jobTypeCircleSelected,
+                  ]}
+                  onPress={() => toggleServiceType(job.service_type_id)}
+                >
+                  <Text
+                    style={[
+                      styles.jobTypeText,
+                      selectedServiceTypes.includes(job.service_type_id) &&
+                        styles.jobTypeTextSelected,
+                    ]}
+                  >
+                    {job.short_name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }
+          })}
+        </View>
+
+        {/* Display Selected Filters */}
+        {selectedServiceTypes.length > 0 && (
+          <View style={styles.selectedFiltersContainer}>
+            {selectedServiceTypes.map((id) => {
+              const svc = serviceTypes.find((s) => s.service_type_id === id);
+              return svc ? (
+                <View key={id} style={styles.selectedFilterCapsule}>
+                  <Text style={styles.selectedFilterText}>{svc.short_name}</Text>
                 </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.noServicesText}>ไม่มีงานที่ตรงกับฟิลเตอร์</Text>
-          )}
+              ) : null;
+            })}
+          </View>
+        )}
 
-          {/* Modal ฟิลเตอร์ */}
-          <Modal
-            visible={filterModalVisible}
-            transparent
-            animationType="slide"
-            onRequestClose={closeFilterModal}
-          >
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>เลือกฟิลเตอร์</Text>
-                <Text style={styles.modalSubTitle}>หมวดหมู่สัตว์เลี้ยง</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {petCategories.map((category) => (
-                    <TouchableOpacity
-                      key={category.pet_type_id}
-                      style={[
-                        styles.modalOption,
-                        selectedPetCategory === category.pet_type_id &&
-                          styles.modalOptionSelected,
-                      ]}
-                      onPress={() => setSelectedPetCategory(category.pet_type_id)}
-                    >
-                      <Text
-                        style={[
-                          styles.modalOptionText,
-                          selectedPetCategory === category.pet_type_id &&
-                            styles.modalOptionTextSelected,
-                        ]}
-                      >
-                        {category.type_name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                <Text style={styles.modalSubTitle}>ประเภทบริการ</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {serviceTypes.map((service) => (
-                    <TouchableOpacity
-                      key={service.service_type_id}
-                      style={[
-                        styles.modalOption,
-                        selectedServiceType === service.service_type_id &&
-                          styles.modalOptionSelected,
-                      ]}
-                      onPress={() => setSelectedServiceType(service.service_type_id)}
-                    >
-                      <Text
-                        style={[
-                          styles.modalOptionText,
-                          selectedServiceType === service.service_type_id &&
-                            styles.modalOptionTextSelected,
-                        ]}
-                      >
-                        {service.short_name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                {/* ปุ่มล้างฟิลเตอร์ */}
-                <TouchableOpacity style={styles.modalResetButton} onPress={resetFilters}>
-                  <Text style={styles.modalResetButtonText}>ล้างฟิลเตอร์</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.modalButton} onPress={handleConfirmFilter}>
-                  <Text style={styles.modalButtonText}>ตกลง</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
+        {/* Section: พี่เลี้ยง (เฉพาะพี่เลี้ยงในจังหวัดเดียวกับสมาชิกที่เลือกประเภทงาน) */}
+        <Text style={styles.sectionTitle}>พี่เลี้ยงใกล้ฉัน</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sitterAvatarRow}>
+          {filteredSitters.length > 0 ? (
+            filteredSitters.map((sitter) => (
+              <TouchableOpacity
+                key={sitter.sitter_id}
+                style={styles.sitterAvatarContainer}
+                onPress={() => handleNavigateToProfileSitter(sitter.sitter_id)}
+              >
+                <View style={styles.sitterAvatarWrapper}>
+                  {sitter.profile_image ? (
+                    <Image source={{ uri: sitter.profile_image }} style={styles.sitterAvatarImage} />
+                  ) : (
+                    <View style={styles.sitterPlaceholder}>
+                      <AntDesign name="user" size={28 * scale} color="#FFF" />
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.sitterAvatarName}>{sitter.first_name}</Text>
+                <View style={styles.ratingContainer}>
+                  <FontAwesome name="star" size={14 * scale} color="#FFD700" style={styles.starIcon} />
+                  <Text style={styles.ratingText}>{sitter.rating ? sitter.rating.toFixed(1) : "0.0"}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <Text style={styles.noServicesText}>ไม่พบพี่เลี้ยงบริเวณนี้</Text>
+          )}
         </ScrollView>
-      </View>
+
+        {/* Modal สำหรับเลือกประเภทงานเพิ่มเติม */}
+        <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>เลือกประเภทงาน</Text>
+              <ScrollView contentContainerStyle={styles.modalGrid}>
+                <View style={styles.modalGridContainer}>
+                  {serviceTypes.map((job) => (
+                    <TouchableOpacity
+                      key={job.service_type_id}
+                      style={[
+                        styles.jobTypeCircle,
+                        selectedServiceTypes.includes(job.service_type_id) &&
+                          styles.jobTypeCircleSelected,
+                      ]}
+                      onPress={() => toggleServiceType(job.service_type_id)}
+                    >
+                      <Text
+                        style={[
+                          styles.jobTypeText,
+                          selectedServiceTypes.includes(job.service_type_id) &&
+                            styles.jobTypeTextSelected,
+                        ]}
+                      >
+                        {job.short_name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+              <TouchableOpacity style={styles.modalCloseButton} onPress={() => setModalVisible(false)}>
+                <Text style={styles.modalCloseButtonText}>ปิด</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-// Helper function: แปลงราคาเป็นจำนวนเต็มถ้าไม่มีเศษ (.00)
-const formatPrice = (price) => {
-  const num = parseFloat(price);
-  return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
-};
-
-// Mapping สำหรับหน่วยการคิดราคาเป็นภาษาไทย
-const pricingUnitMapping = {
-  per_walk: "การเดิน",
-  per_night: "คืน",
-  per_session: "ครั้ง",
-};
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F3E5F5", // สีพื้นหลังอ่อน ๆ โทนม่วง
-  },
-  container: {
-    flex: 1,
-    backgroundColor: "#F3E5F5",
-  },
-  scrollContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
+  safeArea: { flex: 1, backgroundColor: "#FFF" },
+  scrollContent: { padding: 20 },
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 25,
+    marginBottom: 25 * scale,
   },
-  profileSection: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  profileSection: { flexDirection: "row", alignItems: "center" },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF", // avatar สีขาว
+    width: 50 * scale,
+    height: 50 * scale,
+    borderRadius: (50 * scale) / 2,
+    backgroundColor: "#FFF",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
-  },
-  greeting: {},
-  greetingText: {
-    fontSize: 18,
-    fontFamily: "Prompt-Bold",
-    color: "#4A148C", // สีม่วงเข้ม
-  },
-  subGreeting: {
-    fontSize: 14,
-    fontFamily: "Prompt-Regular",
-    color: "#7B1FA2", // สีม่วงอ่อน
-  },
-  logoutButton: {
-    padding: 4,
-  },
-  filterButtonContainer: {
-    marginBottom: 20,
-    alignItems: "center",
-  },
-  filterButton: {
-    backgroundColor: "#4A148C",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-  },
-  filterButtonText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: "Prompt-Bold",
-    color: "#4A148C", // สีม่วงเข้ม
-  },
-  seeAll: {
-    fontSize: 14,
-    fontFamily: "Prompt-Medium",
-    color: "#4A148C",
-    opacity: 0.8,
-  },
-  listContainer: {
-    marginBottom: 25,
-  },
-  listItem: {
-    flexDirection: "row",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  listItemInfo: {
-    flex: 1,
-  },
-  listItemTitle: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    color: "#4A148C",
-    marginBottom: 5,
-  },
-  listItemDescription: {
-    fontSize: 14,
-    fontFamily: "Prompt-Regular",
-    color: "#7B1FA2",
-  },
-  listItemPrice: {
-    justifyContent: "center",
-    alignItems: "flex-end",
-  },
-  priceText: {
-    fontSize: 14,
-    fontFamily: "Prompt-Bold",
-    color: "#4A148C",
-  },
-  serviceCapsuleContainer: {
-    marginBottom: 25,
-  },
-  filterContainer: {
-    marginBottom: 25,
-  },
-  filterTitle: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    color: "#4A148C",
-    marginBottom: 10,
-  },
-  filterChip: {
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 20,
+    marginRight: 12 * scale,
     borderWidth: 1,
-    borderColor: "#4A148C",
-    marginRight: 10,
-    backgroundColor: "#F3E5F5",
+    borderColor: "#E52020",
   },
-  filterChipSelected: {
-    backgroundColor: "#4A148C",
+  avatarImage: { width: "100%", height: "100%", borderRadius: (50 * scale) / 2 },
+  greeting: {},
+  greetingText: { fontSize: 20 * scale, fontFamily: "Prompt-Bold", color: "#000" },
+  subGreeting: { fontSize: 16 * scale, fontFamily: "Prompt-Regular", color: "#555" },
+  // Job Types Grid
+  jobTypesContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginBottom: 20 * scale,
   },
-  filterChipText: {
-    fontSize: 14,
+  jobTypeCircle: {
+    width: 70 * scale,
+    height: 70 * scale,
+    borderRadius: (70 * scale) / 2,
+    backgroundColor: "#FFF",
+    borderWidth: 1,
+    borderColor: "#E52020",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 15 * scale,
+  },
+  jobTypeCircleSelected: {
+    backgroundColor: "#E52020",
+  },
+  jobTypeText: {
+    fontSize: 14 * scale,
     fontFamily: "Prompt-Regular",
-    color: "#4A148C",
+    color: "#E52020",
+    textAlign: "center",
   },
-  filterChipTextSelected: {
-    fontFamily: "Prompt-Bold",
-    color: "#FFFFFF",
+  jobTypeTextSelected: {
+    color: "#FFF",
   },
+  moreCircle: {
+    backgroundColor: "#E52020",
+  },
+  // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.3)",
     justifyContent: "center",
     alignItems: "center",
   },
   modalContent: {
-    width: "80%",
     backgroundColor: "#FFF",
-    borderRadius: 10,
-    padding: 20,
+    borderRadius: 20 * scale,
+    padding: 20 * scale,
+    width: "90%",
+    maxHeight: "80%",
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 22 * scale,
     fontFamily: "Prompt-Bold",
-    marginBottom: 15,
-    color: "#4A148C",
+    color: "#000",
+    marginBottom: 15 * scale,
     textAlign: "center",
   },
-  modalSubTitle: {
-    fontSize: 16,
-    fontFamily: "Prompt-Medium",
-    color: "#4A148C",
-    marginBottom: 10,
+  modalGrid: {
+    paddingVertical: 10 * scale,
   },
-  modalOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEE",
+  modalGridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
-  modalOptionSelected: {
-    backgroundColor: "#F3E5F5",
-  },
-  modalOptionText: {
-    fontSize: 16,
-    fontFamily: "Prompt-Regular",
-    color: "#4A148C",
-  },
-  modalOptionTextSelected: {
-    fontFamily: "Prompt-Bold",
-    color: "#4A148C",
-  },
-  modalResetButton: {
-    marginTop: 10,
-    backgroundColor: "#FFCDD2",
-    paddingVertical: 10,
-    borderRadius: 25,
+  modalCloseButton: {
+    backgroundColor: "#E52020",
+    paddingVertical: 10 * scale,
+    borderRadius: 10 * scale,
     alignItems: "center",
+    marginTop: 10 * scale,
   },
-  modalResetButtonText: {
-    color: "#C62828",
-    fontSize: 16,
+  modalCloseButtonText: {
+    fontSize: 16 * scale,
     fontFamily: "Prompt-Bold",
-  },
-  modalButton: {
-    marginTop: 20,
-    backgroundColor: "#4A148C",
-    paddingVertical: 12,
-    borderRadius: 25,
-    alignItems: "center",
-  },
-  modalButtonText: {
     color: "#FFF",
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
+  },
+  // Sitters (Horizontal Avatar List)
+  sitterAvatarRow: { marginBottom: 20 * scale },
+  sitterAvatarContainer: { width: 80 * scale, alignItems: "center", marginRight: 20 * scale },
+  sitterAvatarWrapper: {
+    width: 70 * scale,
+    height: 70 * scale,
+    borderRadius: 15 * scale,
+    backgroundColor: "#ccc",
+    overflow: "hidden",
+    marginBottom: 8 * scale,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sitterAvatarImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  sitterPlaceholder: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#999",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sitterAvatarName: { fontSize: 16 * scale, fontFamily: "Prompt-Regular", color: "#000" },
+  ratingContainer: { flexDirection: "row", alignItems: "center", marginTop: 2 * scale },
+  starIcon: { marginRight: 3 * scale },
+  ratingText: { fontSize: 14 * scale, fontFamily: "Prompt-Regular", color: "#000" },
+  // Sitters Fallback Text
+  noServicesText: {
+    textAlign: "center",
+    fontSize: 18 * scale,
+    fontFamily: "Prompt-Regular",
+    color: "#000",
+    marginTop: 20 * scale,
+  },
+  // Selected Filters Display
+  selectedFiltersContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 20 * scale,
+  },
+  selectedFilterCapsule: {
+    paddingVertical: 5 * scale,
+    paddingHorizontal: 10 * scale,
+    borderRadius: 15 * scale,
+    backgroundColor: "#E52020",
+    marginRight: 5 * scale,
+    marginBottom: 5 * scale,
+  },
+  selectedFilterText: {
+    fontSize: 12 * scale,
+    fontFamily: "Prompt-Regular",
+    color: "#FFF",
   },
 });

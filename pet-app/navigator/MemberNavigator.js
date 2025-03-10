@@ -1,5 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { View } from 'react-native';
 import { AntDesign } from '@expo/vector-icons';
 import Home from '../screens/Member/Home';
 import Favorite from '../screens/Member/Favorite';
@@ -13,27 +14,26 @@ const BottomTabNavigator = () => {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarShowLabel: false, // ไม่แสดงชื่อเมนู
         tabBarStyle: {
-          height: 75, // ปรับความสูงของ Bottom Tab
-          backgroundColor: '#1C1C1C', // สีพื้นหลัง Bottom Tab
+          height: 60,            // ความสูงของ Tab Bar
+          backgroundColor: '#fff',
           borderTopColor: 'transparent',
           borderTopWidth: 0,
-          elevation: 0,
-          paddingBottom: 10,
+          // shadow
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.1,
+          shadowRadius: 3,
+          elevation: 5,
         },
-        tabBarLabelStyle: {
-          fontSize: 10, // ขนาดตัวอักษรของ Label
-          fontFamily: 'Prompt-Medium', // ใช้ฟอนต์ Prompt
-          paddingBottom: 5, // ขยับตัวหนังสือให้อยู่ตรงกลางมากขึ้น
+        // กำหนดให้แต่ละ Item ใน Tab Bar จัดกึ่งกลาง
+        tabBarItemStyle: {
+          alignItems: 'center',
+          justifyContent: 'center',
         },
-        tabBarIconStyle: {
-          marginTop: 10, // ทำให้ไอคอนอยู่ตรงกลางของ Bottom Tab
-        },
-        tabBarActiveTintColor: '#fff', // สีไอคอนที่ถูกเลือก
-        tabBarInactiveTintColor: '#fff', // สีไอคอนที่ไม่ได้เลือก
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ color, size, focused }) => {
           let iconName;
-
           if (route.name === 'หน้าแรก') {
             iconName = 'home';
           } else if (route.name === 'รายการโปรด') {
@@ -45,12 +45,22 @@ const BottomTabNavigator = () => {
           }
 
           return (
-            <AntDesign
-              name={iconName}
-              size={size}
-              color={color}
-              style={{ alignSelf: 'center' }} // ทำให้ไอคอนอยู่ตรงกลาง
-            />
+            <View
+              style={{
+                backgroundColor: focused ? '#E52020' : 'transparent',
+                width: 80,
+                height: 40,
+                borderRadius: 30,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <AntDesign
+                name={iconName}
+                size={size}
+                color={focused ? '#fff' : color}
+              />
+            </View>
           );
         },
       })}

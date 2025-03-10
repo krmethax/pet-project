@@ -52,7 +52,7 @@ export default function AddService() {
   const fetchStats = useCallback(() => {
     if (sitterId) {
       setLoading(true);
-      fetch(`http://192.168.133.111:5000/api/sitter/${sitterId}/created-jobs`)
+      fetch(`http://192.168.1.10:5000/api/sitter/sitter-services/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -65,7 +65,7 @@ export default function AddService() {
         .then((data) => {
           console.log("งานที่ดึงมาจาก API:", data);
           // สมมติว่า API ส่งกลับข้อมูลในรูปแบบ { jobs: [...] }
-          const jobList = data.jobs ? data.jobs : [];
+          const jobList = data.services ? data.services : [];
           setJobs(jobList);
           setStats({
             jobsCreated: jobList.length,
@@ -95,7 +95,7 @@ export default function AddService() {
   useEffect(() => {
     const fetchServiceTypes = async () => {
       try {
-        const response = await fetch("http://192.168.133.111:5000/api/sitter/service-types");
+        const response = await fetch("http://192.168.1.10:5000/api/sitter/service-types");
         if (response.ok) {
           const data = await response.json();
           console.log("ข้อมูลประเภทบริการที่ได้จาก API:", data);

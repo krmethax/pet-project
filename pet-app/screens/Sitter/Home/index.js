@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  Image,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,22 +14,23 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import { AntDesign } from "@expo/vector-icons";
 
+// Helper: แปลงรายได้ให้แสดงโดยไม่แสดง .00 ถ้าเป็นจำนวนเต็ม
+const formatIncome = (income) => {
+  const num = parseFloat(income);
+  return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
+};
+
 export default function Home() {
   const navigation = useNavigation();
   const [user, setUser] = useState(null);
   const [sitterId, setSitterId] = useState(null);
-  const [latestJobs, setLatestJobs] = useState([]); // งานล่าสุด (completed & paid)
   const [stats, setStats] = useState({
     jobsCompleted: 0,
     totalIncome: 0,
   });
+  const [incomeStats, setIncomeStats] = useState([]);
+  const [sitters, setSitters] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Helper function: แปลงราคาเป็นจำนวนเต็มถ้าไม่มีเศษ (.00)
-  const formatPrice = (price) => {
-    const num = parseFloat(price);
-    return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
-  };
 
   // ดึง sitter_id จาก AsyncStorage เมื่อ component mount
   useEffect(() => {
@@ -45,10 +47,10 @@ export default function Home() {
     getSitterId();
   }, []);
 
-  // ดึงข้อมูลพี่เลี้ยงจาก API
+  // ดึงข้อมูลพี่เลี้ยงจาก API (รวมสถิติ)
   const fetchUser = useCallback(() => {
     if (sitterId) {
-      fetch(`http://192.168.133.111:5000/api/sitter/sitter/${sitterId}`)
+      fetch(`http://192.168.1.10:5000/api/sitter/sitter/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -71,42 +73,60 @@ export default function Home() {
     }
   }, [sitterId]);
 
-  // ดึงงานล่าสุดของพี่เลี้ยงจาก API
-  const fetchLatestJobs = useCallback(() => {
+  // ดึงข้อมูลรายได้และงานที่รับไปแล้วจาก API
+  const fetchIncomeStats = useCallback(() => {
     if (sitterId) {
-      // เชื่อมกับ API /latest-completed-jobs โดยส่ง sitter_id เป็น query parameter
-      fetch(`http://192.168.133.111:5000/api/sitter/latest-completed-jobs?sitter_id=${sitterId}`)
+      fetch(`http://192.168.1.10:5000/api/sitter/sitter/income-stats/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
-            console.error("Response status:", response.status);
-            console.error("Response text:", text);
-            throw new Error("ไม่สามารถดึงงานล่าสุดของพี่เลี้ยงได้");
+            console.error("Income stats response status:", response.status);
+            console.error("Income stats response text:", text);
+            throw new Error("ไม่สามารถดึงข้อมูลรายได้ได้");
           }
           return response.json();
         })
         .then((data) => {
-          console.log("Fetched latest jobs:", data);
-          // ตรวจสอบว่าข้อมูลที่ได้มี key "jobs" หรือไม่
-          if (Array.isArray(data)) {
-            setLatestJobs(data);
-          } else {
-            setLatestJobs(data.jobs || []);
-          }
+          console.log("Income stats data:", data);
+          const incomeData = data.incomeStats || [];
+          let totalJobs = 0;
+          let totalIncome = 0;
+          incomeData.forEach((item) => {
+            totalJobs += Number(item.job_count);
+            totalIncome += parseFloat(item.total_income);
+          });
+          setStats({
+            jobsCompleted: totalJobs,
+            totalIncome: totalIncome,
+          });
         })
         .catch((error) => {
-          console.error("Error fetching latest jobs:", error);
+          console.error("Error fetching income stats:", error);
         });
     }
   }, [sitterId]);
+
+  // ดึงข้อมูลพี่เลี้ยงแนะนำจาก API (สมมุติ endpoint นี้)
+  const fetchRecommendedSitters = useCallback(() => {
+    fetch("http://192.168.1.10:5000/api/auth/sitters")
+      .then((response) => response.json())
+      .then((data) => {
+        console.log("Recommended sitters:", data);
+        setSitters(data.sitters || []);
+      })
+      .catch((error) => {
+        console.error("Error fetching recommended sitters:", error);
+      });
+  }, []);
 
   // ดึงข้อมูลทั้งหมด
   const fetchAllData = useCallback(() => {
     if (sitterId) {
       fetchUser();
-      fetchLatestJobs();
+      fetchIncomeStats();
+      fetchRecommendedSitters();
     }
-  }, [sitterId, fetchUser, fetchLatestJobs]);
+  }, [sitterId, fetchUser, fetchIncomeStats, fetchRecommendedSitters]);
 
   useEffect(() => {
     if (sitterId) {
@@ -114,17 +134,15 @@ export default function Home() {
     }
   }, [sitterId, fetchAllData]);
 
-  // ฟังก์ชันรีเฟรชหน้าจอ
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchAllData();
     setRefreshing(false);
   }, [fetchAllData]);
 
-  // ฟังก์ชัน Logout
-  const handleLogout = async () => {
-    await AsyncStorage.removeItem("sitter_id");
-    navigation.replace("Login");
+  // เมื่อจิ้มที่ Card สถิติ จะนำไปหน้า Graph เพื่อแสดงรายได้แบบละเอียด
+  const handleStatsPress = () => {
+    navigation.navigate("Graph", { stats, incomeStats });
   };
 
   return (
@@ -138,26 +156,32 @@ export default function Home() {
           }
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
+          {/* Header: แสดง "สวัสดี" และ ชื่อ-นามสกุล พร้อมรูปโปรไฟล์ */}
           <View style={styles.header}>
             <View style={styles.profileSection}>
-              <View style={styles.avatar}>
-                <AntDesign name="user" size={24} color="#FFF" />
-              </View>
+              {user && user.sitter && user.sitter.profile_image ? (
+                <Image
+                  source={{ uri: user.sitter.profile_image }}
+                  style={styles.profileAvatar}
+                />
+              ) : (
+                <View style={styles.profileAvatar}>
+                  <AntDesign name="user" size={24} color="#FFF" />
+                </View>
+              )}
               <View style={styles.greeting}>
-                <Text style={styles.greetingText}>
-                  {user ? `สวัสดี ${user.sitter.first_name}` : ""}
-                </Text>
-                <Text style={styles.subGreeting}>ยินดีต้อนรับ</Text>
+                <Text style={styles.greetingText}>สวัสดี</Text>
+                {user && user.sitter && (
+                  <Text style={styles.nameText}>
+                    {user.sitter.first_name} {user.sitter.last_name}
+                  </Text>
+                )}
               </View>
             </View>
-            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-              <AntDesign name="logout" size={20} color="#000" />
-            </TouchableOpacity>
           </View>
 
-          {/* Card สถิติ (ตัวอย่าง) */}
-          <View style={styles.statsCard}>
+          {/* Card สถิติ */}
+          <TouchableOpacity style={styles.statsCard} onPress={handleStatsPress}>
             <Text style={styles.statsTitle}>สถิติของคุณ</Text>
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
@@ -165,40 +189,41 @@ export default function Home() {
                 <Text style={styles.statLabel}>รับงานไปแล้ว</Text>
               </View>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>฿ {stats.totalIncome}</Text>
-                <Text style={styles.statLabel}>รายได้</Text>
+                <Text style={styles.statValue}>
+                  ฿ {formatIncome(stats.totalIncome)}
+                </Text>
+                <Text style={styles.statLabel}>รายได้รวม</Text>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
 
-          {/* Section Header สำหรับงานล่าสุด */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              งานล่าสุด
-            </Text>
-          </View>
-          {latestJobs.length > 0 ? (
-            <View style={styles.listContainer}>
-              {latestJobs.map((job) => (
-                <View key={job.sitter_service_id} style={styles.listItem}>
-                  <View style={styles.listItemInfo}>
-                    <Text style={styles.listItemTitle}>{job.short_name}</Text>
-                    <Text style={styles.listItemDescription}>
-                      {job.description || "ไม่มีรายละเอียด"}
-                    </Text>
-                  </View>
-                  <View style={styles.listItemPrice}>
-                    <Text style={styles.priceText}>
-                      {formatPrice(job.price)} บาท /{" "}
-                      {pricingUnitMapping[job.pricing_unit] || job.pricing_unit}
+          {/* Section: พี่เลี้ยงแนะนำ */}
+          <View style={styles.recommendedSection}>
+            <Text style={styles.sectionHeader}>พี่เลี้ยงแนะนำ</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {sitters.map((sitterItem) => (
+                <View key={sitterItem.sitter_id} style={styles.sitterCard}>
+                  <Image
+                    source={
+                      sitterItem.profile_image
+                        ? { uri: sitterItem.profile_image }
+                        : require("../../../assets/images/avatar.png")
+                    }
+                    style={styles.sitterImage}
+                  />
+                  <Text style={styles.sitterName} numberOfLines={1}>
+                    {sitterItem.first_name} {sitterItem.last_name}
+                  </Text>
+                  <View style={styles.reviewContainer}>
+                    <AntDesign name="star" size={14} color="#FFC107" />
+                    <Text style={styles.sitterReview}>
+                      {sitterItem.rating ? sitterItem.rating.toFixed(1) : "0.0"}
                     </Text>
                   </View>
                 </View>
               ))}
-            </View>
-          ) : (
-            <Text style={styles.noServicesText}>ไม่มีงานล่าสุด</Text>
-          )}
+            </ScrollView>
+          </View>
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -206,32 +231,23 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFF",
-  },
-  container: {
-    flex: 1,
-    backgroundColor: "#FFF",
-  },
-  scrollContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
+  safeArea: { flex: 1, backgroundColor: "#FFF" },
+  container: { flex: 1, backgroundColor: "#FFF" },
+  scrollContainer: { padding: 20, paddingBottom: 40 },
+  // Header
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: 25,
+    alignItems: "flex-start", // อยู่มุมซ้าย
+    width: "100%",
   },
   profileSection: {
     flexDirection: "row",
     alignItems: "center",
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  profileAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: "#000",
     justifyContent: "center",
     alignItems: "center",
@@ -243,14 +259,12 @@ const styles = StyleSheet.create({
     fontFamily: "Prompt-Bold",
     color: "#000",
   },
-  subGreeting: {
-    fontSize: 14,
+  nameText: {
+    fontSize: 16,
     fontFamily: "Prompt-Regular",
-    color: "#666",
+    color: "#000",
   },
-  logoutButton: {
-    padding: 4,
-  },
+  // Card สถิติ
   statsCard: {
     backgroundColor: "#F5F5F5",
     borderRadius: 10,
@@ -268,68 +282,53 @@ const styles = StyleSheet.create({
     marginBottom: 25,
     textAlign: "center",
   },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  statItem: {
-    alignItems: "center",
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 22,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-  },
-  statLabel: {
-    fontSize: 14,
-    fontFamily: "Prompt-Regular",
-    color: "#666",
-  },
+  statsRow: { flexDirection: "row", justifyContent: "space-between" },
+  statItem: { alignItems: "center", flex: 1 },
+  statValue: { fontSize: 22, fontFamily: "Prompt-Bold", color: "#000" },
+  statLabel: { fontSize: 14, fontFamily: "Prompt-Regular", color: "#666" },
+  // Recommended Sitters
+  recommendedSection: { marginBottom: 25 },
   sectionHeader: {
-    marginBottom: 15,
-  },
-  sectionTitle: {
     fontSize: 18,
     fontFamily: "Prompt-Bold",
     color: "#000",
+    marginBottom: 15,
   },
-  listContainer: {
-    marginBottom: 25,
-  },
-  listItem: {
-    flexDirection: "row",
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+  sitterCard: {
+    width: 120,
+    height: 160, // กำหนดความสูงคงที่
+    marginRight: 10,
+    padding: 8,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    justifyContent: "space-between", // ให้ review อยู่ด้านล่างเสมอ
     alignItems: "center",
   },
-  listItemInfo: {
-    flex: 1,
-  },
-  listItemTitle: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
+  sitterImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
     marginBottom: 5,
   },
-  listItemDescription: {
+  sitterName: {
     fontSize: 14,
-    fontFamily: "Prompt-Regular",
-    color: "#666",
-  },
-  listItemPrice: {
-    paddingLeft: 10,
-  },
-  priceText: {
-    fontSize: 16,
     fontFamily: "Prompt-Bold",
     color: "#000",
-  },
-  noServicesText: {
-    fontSize: 16,
-    color: "#666",
     textAlign: "center",
-    marginTop: 20,
+  },
+  reviewContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    justifyContent: "center",
+  },
+  sitterReview: {
+    fontSize: 12,
+    fontFamily: "Prompt-Regular",
+    color: "#666",
+    marginLeft: 4,
   },
 });
