@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -24,16 +25,19 @@ import * as ImagePicker from "expo-image-picker";
 export default function ProfileSitter() {
   const route = useRoute();
   const navigation = useNavigation();
-  const { sitter_id } = route.params; // รับ sitter_id จาก route params
+  const { sitter_id } = route.params; // รับ sitter_id จาก route.params
 
   const [sitter, setSitter] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [serviceTypes, setServiceTypes] = useState([]);
+  const [petCategories, setPetCategories] = useState([]); // สำหรับ pet categories
   const [selectedJob, setSelectedJob] = useState(null);
   const [liked, setLiked] = useState(false);
   const [activeTab, setActiveTab] = useState("jobs"); // "jobs" หรือ "about"
   const [refreshing, setRefreshing] = useState(false);
   const [memberId, setMemberId] = useState(null);
+  // state สำหรับค่าเฉลี่ย rating จาก API reviews
+  const [averageRating, setAverageRating] = useState(null);
 
   // ดึง member_id จาก AsyncStorage
   useEffect(() => {
@@ -52,19 +56,21 @@ export default function ProfileSitter() {
 
   // ดึงข้อมูลโปรไฟล์พี่เลี้ยง
   const fetchProfile = useCallback(() => {
-    fetch(`http://192.168.1.10:5000/api/auth/sitter/${sitter_id}`)
+    fetch(`http://192.168.1.8:5000/api/auth/sitter/${sitter_id}`)
       .then((response) => response.json())
       .then((data) => {
         if (data.sitter) {
           setSitter(data.sitter);
         }
       })
-      .catch((error) => console.error("Error fetching sitter profile:", error));
+      .catch((error) =>
+        console.error("Error fetching sitter profile:", error)
+      );
   }, [sitter_id]);
 
   // ดึงข้อมูลงานของพี่เลี้ยง
   const fetchJobs = useCallback(() => {
-    fetch("http://192.168.1.10:5000/api/auth/sitter-services")
+    fetch("http://192.168.1.8:5000/api/auth/sitter-services")
       .then((response) => response.json())
       .then((data) => {
         if (data.services) {
@@ -79,7 +85,7 @@ export default function ProfileSitter() {
 
   // ดึงข้อมูลประเภทบริการ
   useEffect(() => {
-    fetch("http://192.168.1.10:5000/api/auth/service-type")
+    fetch("http://192.168.1.8:5000/api/auth/service-type")
       .then((response) => response.json())
       .then((data) => {
         if (data.serviceTypes) {
@@ -88,14 +94,32 @@ export default function ProfileSitter() {
           setServiceTypes(data);
         }
       })
-      .catch((error) => console.error("Error fetching service types:", error));
+      .catch((error) =>
+        console.error("Error fetching service types:", error)
+      );
+  }, []);
+
+  // ดึงข้อมูลประเภทสัตว์เลี้ยง
+  useEffect(() => {
+    fetch("http://192.168.1.8:5000/api/auth/pet-categories")
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.petCategories) {
+          setPetCategories(data.petCategories);
+        }
+      })
+      .catch((error) =>
+        console.error("Error fetching pet categories:", error)
+      );
   }, []);
 
   // ดึงสถานะถูกใจ (Favorite) ของพี่เลี้ยงสำหรับสมาชิกที่ล็อกอิน
   const fetchFavoriteStatus = useCallback(async () => {
     if (!memberId) return;
     try {
-      const response = await fetch(`http://192.168.1.10:5000/api/auth/favorite/${memberId}`);
+      const response = await fetch(
+        `http://192.168.1.8:5000/api/auth/favorite/${memberId}`
+      );
       const data = await response.json();
       if (response.ok && data.favorites) {
         const exists = data.favorites.some(
@@ -107,6 +131,22 @@ export default function ProfileSitter() {
       console.error("Error fetching favorite status:", error);
     }
   }, [memberId, sitter_id]);
+
+  // ดึงค่าเฉลี่ย rating จาก API Reviews ของพี่เลี้ยง
+  useEffect(() => {
+    if (sitter_id) {
+      fetch(`http://192.168.1.8:5000/api/auth/reviews/sitter/${sitter_id}`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.averageRating !== undefined) {
+            setAverageRating(data.averageRating);
+          }
+        })
+        .catch((error) =>
+          console.error("Error fetching average rating:", error)
+        );
+    }
+  }, [sitter_id]);
 
   // เรียก fetchProfile, fetchJobs และ fetchFavoriteStatus เมื่อ mount
   useEffect(() => {
@@ -124,57 +164,11 @@ export default function ProfileSitter() {
     setRefreshing(false);
   }, [fetchProfile, fetchJobs, fetchFavoriteStatus]);
 
-  // ฟังก์ชันสำหรับสร้างการจอง (Booking)
-  const createBooking = async () => {
-    if (!selectedJob) {
-      alert("กรุณาเลือกรายการงานที่ต้องการจอง");
-      return null;
-    }
-    const bookingData = {
-      member_id: memberId,
-      sitter_id: sitter ? sitter.sitter_id : null,
-      pet_type_id: selectedJob.pet_type_id || 1,
-      pet_breed: "Unknown",
-      sitter_service_id: selectedJob.sitter_service_id,
-      start_date: new Date().toISOString(),
-      end_date: new Date(Date.now() + 86400000).toISOString(),
-      total_price: selectedJob.price,
-    };
-
-    try {
-      const response = await fetch("http://192.168.1.10:5000/api/auth/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bookingData),
-      });
-      const textResponse = await response.text();
-      console.log("Create Booking raw response:", textResponse);
-      let data;
-      try {
-        data = JSON.parse(textResponse);
-      } catch (e) {
-        console.error("Error parsing booking response JSON:", e);
-        alert("ไม่สามารถแปลงข้อมูลการจองที่ได้จาก server ให้เป็น JSON");
-        return null;
-      }
-      if (response.ok) {
-        return data.booking_id;
-      } else {
-        alert("เกิดข้อผิดพลาดในการสร้างการจอง: " + data.message);
-        return null;
-      }
-    } catch (error) {
-      console.error("Error creating booking:", error);
-      alert("เกิดข้อผิดพลาดในการสร้างการจอง");
-      return null;
-    }
-  };
-
   // ฟังก์ชันสำหรับเพิ่มถูกใจพี่เลี้ยง
   const addFavorite = async () => {
     if (!memberId) return;
     try {
-      const response = await fetch("http://192.168.1.10:5000/api/auth/favorite", {
+      const response = await fetch("http://192.168.1.8:5000/api/auth/favorite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ member_id: memberId, sitter_id }),
@@ -196,7 +190,7 @@ export default function ProfileSitter() {
     if (!memberId) return;
     try {
       const response = await fetch(
-        `http://192.168.1.10:5000/api/auth/favorite/${memberId}/${sitter_id}`,
+        `http://192.168.1.8:5000/api/auth/favorite/${memberId}/${sitter_id}`,
         { method: "DELETE" }
       );
       const data = await response.json();
@@ -211,7 +205,20 @@ export default function ProfileSitter() {
     }
   };
 
-  // ถ้าไม่พบข้อมูลพี่เลี้ยง
+  // ฟังก์ชันช่วยค้นหา short_name จาก serviceTypes
+  const getServiceTypeShortName = (service_type_id) => {
+    const type = serviceTypes.find(
+      (typeItem) => typeItem.service_type_id === service_type_id
+    );
+    return type ? type.short_name : "ไม่ระบุ";
+  };
+
+  // ฟังก์ชันช่วยค้นหาชื่อประเภทสัตว์เลี้ยง (type_name) จาก petCategories
+  const getPetCategoryName = (pet_type_id) => {
+    const category = petCategories.find((cat) => cat.pet_type_id === pet_type_id);
+    return category ? category.type_name : "ไม่ระบุ";
+  };
+
   if (!sitter) {
     return (
       <SafeAreaView style={styles.container}>
@@ -226,7 +233,7 @@ export default function ProfileSitter() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Feather name="arrow-left" size={24} color="#000" />
+          <Feather name="arrow-left" size={24} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>โปรไฟล์</Text>
       </View>
@@ -262,9 +269,14 @@ export default function ProfileSitter() {
             <View style={styles.infoRowSmall}>
               <FontAwesome name="star" size={18} color="#FFD700" style={styles.starIcon} />
               <Text style={styles.ratingTextSmall}>
-                {sitter.rating ? sitter.rating.toFixed(1) : "0.0"}
+                {averageRating !== null ? averageRating.toFixed(1) : "0.0"}
               </Text>
-              <MaterialIcons name="location-on" size={18} color="#000" style={styles.locationIcon} />
+              <MaterialIcons
+                name="location-on"
+                size={18}
+                color="#000"
+                style={styles.locationIcon}
+              />
               <Text style={styles.locationSmall}>
                 {sitter.province || "ไม่ระบุจังหวัด"}
               </Text>
@@ -307,11 +319,19 @@ export default function ProfileSitter() {
                   ]}
                   onPress={() =>
                     setSelectedJob((prev) =>
-                      prev && prev.sitter_service_id === jobItem.sitter_service_id ? null : jobItem
+                      prev && prev.sitter_service_id === jobItem.sitter_service_id
+                        ? null
+                        : jobItem
                     )
                   }
                 >
-                  <Text style={styles.jobTitle}>{jobItem.short_name || "ไม่ระบุ"}</Text>
+                  <Text style={styles.jobTitle}>
+                    {getServiceTypeShortName(jobItem.service_type_id)}
+                  </Text>
+                  {/* แสดงชื่อประเภทสัตว์เลี้ยงแทน id */}
+                  <Text style={styles.jobPetType}>
+                    ประเภทสัตว์เลี้ยง: {getPetCategoryName(jobItem.pet_type_id)}
+                  </Text>
                   <Text style={styles.jobDescription}>
                     {jobItem.description || "ไม่มีรายละเอียด"}
                   </Text>
@@ -335,8 +355,8 @@ export default function ProfileSitter() {
             <View style={styles.aboutContainer}>
               <MaterialIcons name="location-on" size={20} color="#000" style={styles.aboutIcon} />
               <Text style={styles.aboutValue}>
-                {sitter.address || "ไม่ระบุ"} ตำบล{sitter.tambon || "ไม่ระบุ"} อำเภอ
-                {sitter.amphure || "ไม่ระบุ"} จังหวัด{sitter.province || "ไม่ระบุ"}
+                {sitter.address || "ไม่ระบุ"} ตำบล {sitter.tambon || "ไม่ระบุ"} อำเภอ{" "}
+                {sitter.amphure || "ไม่ระบุ"} จังหวัด {sitter.province || "ไม่ระบุ"}
               </Text>
             </View>
             <View style={styles.aboutContainer}>
@@ -347,7 +367,7 @@ export default function ProfileSitter() {
         )}
       </ScrollView>
 
-      {/* Footer Buttons: ปุ่มถูกใจอยู่ด้านซ้าย, ปุ่มจองอยู่ด้านขวา (ปุ่มจองยาว) */}
+      {/* Footer Buttons */}
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.favoriteButtonFooter}
@@ -356,22 +376,42 @@ export default function ProfileSitter() {
           <Ionicons
             name={liked ? "heart" : "heart-outline"}
             size={28}
-            color={liked ? "red" : "#4D5DFB"}
+            color={liked ? "#FF0000" : "#ddd"}
           />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.bookButton, !selectedJob && styles.bookButtonDisabled]}
-          onPress={async () => {
-            if (selectedJob) {
-              const booking_id = await createBooking();
-              if (booking_id) {
-                navigation.navigate("BookingDetail", {
-                  job: { ...selectedJob, booking_id },
-                });
-              } else {
-                console.error("Booking creation failed, booking_id is null");
-              }
+          onPress={() => {
+            if (!selectedJob) {
+              alert("กรุณาเลือกรายการงานที่ต้องการจอง");
+              return;
             }
+            // สร้าง bookingData จากข้อมูลที่เลือก
+            const bookingData = {
+              booking_id: null,
+              member_id: memberId ?? null,
+              sitter_id: sitter ? sitter.sitter_id : null,
+              pet_type_id: selectedJob.pet_type_id ?? 1,
+              pet_breed: selectedJob.pet_breed ?? "",
+              sitter_service_id: selectedJob.sitter_service_id ?? null,
+              service_type_id: selectedJob.service_type_id ?? null,
+              start_date: new Date().toISOString(),
+              end_date: new Date(Date.now() + 86400000).toISOString(),
+              status: "pending",
+              agreement_status: "pending",
+              total_price: selectedJob.price ?? null,
+              payment_status: "pending",
+              slip_image: "",
+              created_at: null,
+              updated_at: null,
+              sitter_first_name: sitter ? sitter.first_name : "",
+              sitter_last_name: sitter ? sitter.last_name : "",
+              sitter_phone: sitter ? sitter.phone : "",
+              description: selectedJob.description ?? "",
+              service_type_name: selectedJob.short_name ?? "",
+            };
+            console.log(bookingData);
+            navigation.navigate("BookingDetail", { bookingData });
           }}
           disabled={!selectedJob}
         >
@@ -383,25 +423,22 @@ export default function ProfileSitter() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fff" },
+  safeArea: { flex: 1, backgroundColor: "#fff", padding: 20 },
   container: { flex: 1, justifyContent: "center", alignItems: "center" },
   errorText: { fontSize: 16, color: "#000" },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
-    marginBottom: 10,
+    marginBottom: 20,
   },
   backButton: { padding: 5 },
   headerTitle: {
-    fontSize: 18,
-    fontFamily: "Prompt-Medium",
+    fontSize: 20,
+    fontFamily: "Prompt-Bold",
     color: "#000",
     marginLeft: 10,
   },
-  scrollContainer: { padding: 20, backgroundColor: "#fff" },
+  scrollContainer: { backgroundColor: "#fff" },
   profileContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -438,9 +475,9 @@ const styles = StyleSheet.create({
     marginVertical: 15,
   },
   tabButton: { paddingVertical: 10 },
-  tabButtonActive: { borderBottomWidth: 2, borderBottomColor: "#000" },
+  tabButtonActive: { borderBottomWidth: 2, borderBottomColor: "#FF0000" },
   tabButtonText: { fontSize: 16, color: "#000", fontFamily: "Prompt-Regular" },
-  tabButtonTextActive: { fontWeight: "bold", fontFamily: "Prompt-Bold" },
+  tabButtonTextActive: { fontFamily: "Prompt-Bold" },
   jobCard: {
     width: "100%",
     backgroundColor: "#fff",
@@ -450,8 +487,9 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
   },
-  jobCardSelected: { borderColor: "#000" },
+  jobCardSelected: { borderColor: "#FF0000" },
   jobTitle: { fontSize: 16, fontFamily: "Prompt-Bold", color: "#000", marginBottom: 5 },
+  jobPetType: { fontSize: 14, fontFamily: "Prompt-Regular", color: "#333", marginBottom: 5 },
   jobDescription: { fontSize: 14, fontFamily: "Prompt-Regular", color: "#333", marginBottom: 5 },
   jobPrice: { fontSize: 14, fontFamily: "Prompt-Bold", color: "#000" },
   noJobsText: { fontSize: 16, fontFamily: "Prompt-Regular", color: "#000", marginTop: 10 },
@@ -468,9 +506,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 15,
-    borderTopWidth: 1,
-    borderTopColor: "#ddd",
+    paddingVertical: 15,
     backgroundColor: "#fff",
   },
   favoriteButtonFooter: {
@@ -481,7 +517,7 @@ const styles = StyleSheet.create({
   bookButton: {
     flex: 1,
     paddingVertical: 12,
-    backgroundColor: "#000",
+    backgroundColor: "#FF0000",
     borderRadius: 25,
     height: 50,
     justifyContent: "center",

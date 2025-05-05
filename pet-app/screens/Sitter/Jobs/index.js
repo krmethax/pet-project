@@ -17,6 +17,7 @@ export default function Jobs() {
   const navigation = useNavigation();
   const [jobs, setJobs] = useState([]);
   const [sitterId, setSitterId] = useState(null);
+  // state สำหรับเก็บ mapping service types โดย key เป็น service_type_id และ value เป็น short_name
   const [serviceTypes, setServiceTypes] = useState({});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,7 +41,7 @@ export default function Jobs() {
   // ดึงข้อมูล service types จาก API แล้วเก็บ mapping โดย key เป็น service_type_id และ value เป็น short_name
   const fetchServiceTypes = useCallback(async () => {
     try {
-      const response = await fetch("http://192.168.1.10:5000/api/sitter/service-types");
+      const response = await fetch("http://192.168.1.8:5000/api/sitter/service-types");
       if (!response.ok) {
         throw new Error("ไม่สามารถดึงข้อมูลประเภทงานได้");
       }
@@ -48,8 +49,7 @@ export default function Jobs() {
       // สมมติว่า API ส่งกลับเป็นอาเรย์ใน field serviceTypes
       const mapping = {};
       data.serviceTypes.forEach((type) => {
-        // ใช้ field sitter_service_type จากตาราง service_types เป็น key
-        mapping[type.sitter_service_type] = type.short_name;
+        mapping[type.service_type_id] = type.short_name;
       });
       console.log("Service types mapping:", mapping);
       setServiceTypes(mapping);
@@ -57,7 +57,7 @@ export default function Jobs() {
       console.error("Error fetching service types:", error);
     }
   }, []);
-  
+
   // ดึงข้อมูล service types ครั้งแรกเมื่อ component mount
   useEffect(() => {
     fetchServiceTypes();
@@ -66,7 +66,7 @@ export default function Jobs() {
   // ดึงข้อมูลสมาชิกจาก API สำหรับ memberId
   const fetchMember = async (memberId) => {
     try {
-      const response = await fetch(`http://192.168.1.10:5000/api/auth/member/${memberId}`);
+      const response = await fetch(`http://192.168.1.8:5000/api/auth/member/${memberId}`);
       if (!response.ok) {
         throw new Error("ไม่สามารถดึงข้อมูลสมาชิกได้");
       }
@@ -84,7 +84,7 @@ export default function Jobs() {
     if (sitterId) {
       setLoading(true);
       try {
-        const response = await fetch(`http://192.168.1.10:5000/api/sitter/jobs/${sitterId}`);
+        const response = await fetch(`http://192.168.1.8:5000/api/sitter/jobs/${sitterId}`);
         if (!response.ok) {
           const text = await response.text();
           console.log("Response status:", response.status);
@@ -94,23 +94,26 @@ export default function Jobs() {
         const data = await response.json();
         const transformedJobs = await Promise.all(
           data.jobs.map(async (job) => {
+            // ดึงข้อมูลสมาชิกสำหรับชื่อผู้จอง
             const memberData = await fetchMember(job.member_id);
             const memberName = memberData
               ? (memberData.member_name ||
                   `${memberData.first_name || ""} ${memberData.last_name || ""}`.trim())
               : "";
-            const serviceTypeName = serviceTypes[job.sitter_service_id] || "";
             return {
               jobId: job.booking_id,
-              jobTitle: serviceTypeName,
+              // ใช้ mapping serviceTypes ที่เก็บไว้เพื่อนำมาแสดงเป็นชื่อประเภทงาน
+              jobTitle: serviceTypes[job.service_type_id] || "ไม่ระบุ",
+              // ดึงรายละเอียดงานจาก field sitter_service_description ที่ได้จาก backend
+              jobDescription: job.sitter_service_description || "ไม่มีรายละเอียดเพิ่มเติม",
               memberName,
               bookingDate: job.start_date,
               price: job.total_price,
               status: job.status,
+              slipImage: job.slip_image,
             };
           })
         );
-        // สามารถตรวจสอบข้อมูล transformedJobs ได้ภายในฟังก์ชันนี้
         console.log("Transformed jobs:", transformedJobs);
         setJobs(transformedJobs);
       } catch (error) {
@@ -125,7 +128,7 @@ export default function Jobs() {
     if (sitterId) {
       fetchJobs();
     }
-  }, [sitterId, serviceTypes, fetchJobs]);
+  }, [sitterId, fetchJobs]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -174,12 +177,21 @@ export default function Jobs() {
     return true;
   });
 
-  // Card สำหรับคำขอใหม่
+  // Card สำหรับคำขอใหม่ (แสดงรายละเอียดครบ)
   const renderJobCard = (job) => (
     <View key={job.jobId} style={styles.card}>
       <View style={styles.cardContent}>
-        <Text style={styles.jobTitle}>{job.jobTitle}</Text>
+        <Text style={styles.jobTitle}>ประเภทงาน: {job.jobTitle}</Text>
+        <Text style={styles.jobDescription}>รายละเอียด: {job.jobDescription}</Text>
         <Text style={styles.memberName}>จองโดย: {job.memberName}</Text>
+        <Text style={styles.bookingDate}>
+          วันที่จอง:{" "}
+          {new Date(job.bookingDate).toLocaleDateString("th-TH-u-ca-buddhist", {
+            day: "numeric",
+            month: "numeric",
+            year: "numeric",
+          })}
+        </Text>
         <Text style={styles.priceText}>฿ {job.price}</Text>
       </View>
       <View style={styles.buttonRow}>
@@ -197,8 +209,17 @@ export default function Jobs() {
   const renderSimpleCard = (job) => (
     <View key={job.jobId} style={styles.card}>
       <View style={styles.cardContent}>
-        <Text style={styles.jobTitle}>{job.jobTitle}</Text>
+        <Text style={styles.jobTitle}>ประเภทงาน: {job.jobTitle}</Text>
+        <Text style={styles.jobDescription}>รายละเอียด: {job.jobDescription}</Text>
         <Text style={styles.memberName}>จองโดย: {job.memberName}</Text>
+        <Text style={styles.bookingDate}>
+          วันที่จอง:{" "}
+          {new Date(job.bookingDate).toLocaleDateString("th-TH-u-ca-buddhist", {
+            day: "numeric",
+            month: "numeric",
+            year: "numeric",
+          })}
+        </Text>
         <Text style={styles.priceText}>฿ {job.price}</Text>
         {activeTab === "approved" && <Text style={styles.approvedStatus}>รับงานแล้ว</Text>}
         {activeTab === "cancelled" && <Text style={styles.cancelledStatus}>ยกเลิกคำขอ</Text>}
@@ -214,7 +235,7 @@ export default function Jobs() {
       return;
     }
     try {
-      const response = await fetch("http://192.168.1.10:5000/api/sitter/jobs/accept", {
+      const response = await fetch("http://192.168.1.8:5000/api/sitter/jobs/accept", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ booking_id: job.jobId, sitter_id: sitterId }),
@@ -235,7 +256,7 @@ export default function Jobs() {
   const handleCancelJob = async (job) => {
     if (!job || !sitterId) return;
     try {
-      const response = await fetch("http://192.168.1.10:5000/api/sitter/jobs/cancel", {
+      const response = await fetch("http://192.168.1.8:5000/api/sitter/jobs/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ booking_id: job.jobId, sitter_id: sitterId }),
@@ -333,7 +354,19 @@ const styles = StyleSheet.create({
     color: "#333",
     marginBottom: 5,
   },
+  jobDescription: {
+    fontSize: 16,
+    fontFamily: "Prompt-Regular",
+    color: "#555",
+    marginBottom: 5,
+  },
   memberName: {
+    fontSize: 14,
+    fontFamily: "Prompt-Regular",
+    color: "#666",
+    marginBottom: 5,
+  },
+  bookingDate: {
     fontSize: 14,
     fontFamily: "Prompt-Regular",
     color: "#666",

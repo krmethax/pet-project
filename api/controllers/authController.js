@@ -422,30 +422,64 @@ exports.submitBookingSlip = async (req, res) => {
 };
 
 exports.createBooking = async (req, res) => {
-  const { member_id, sitter_id, pet_type_id, pet_breed, sitter_service_id, start_date, end_date, total_price } = req.body;
+  const {
+    member_id = null,
+    sitter_id = null,
+    pet_type_id = null,
+    pet_breed = "", // กำหนดค่า default เป็นค่าว่าง
+    sitter_service_id = null,
+    service_type_id,
+    start_date = null,
+    end_date = null,
+    total_price = null
+  } = req.body;
+  
+  if (service_type_id === undefined) {
+    return res.status(400).json({ message: "service_type_id จำเป็นต้องระบุ" });
+  }
+
+  if (!member_id) {
+    return res.status(400).json({ message: "member_id จำเป็นต้องระบุ" });
+  }
+
   try {
-    // ตรวจสอบก่อนว่ามี member_id นี้อยู่ในตาราง Members หรือไม่
+    // ตรวจสอบว่า member_id มีอยู่ในระบบ
     const checkMemberQuery = 'SELECT * FROM Members WHERE member_id = ?';
     const memberCheck = await db.query(checkMemberQuery, [member_id]);
     if (memberCheck.length === 0) {
       return res.status(400).json({ message: "member_id ไม่ถูกต้อง หรือไม่มีอยู่ในระบบ" });
     }
 
+    // ตรวจสอบ service_type_id ว่ามีอยู่ใน Service_Types หรือไม่
+    const checkServiceTypeQuery = 'SELECT * FROM Service_Types WHERE service_type_id = ?';
+    const serviceTypeCheck = await db.query(checkServiceTypeQuery, [service_type_id]);
+    if (serviceTypeCheck.length === 0) {
+      return res.status(400).json({ message: "service_type_id ไม่ถูกต้อง หรือไม่มีอยู่ในระบบ" });
+    }
+
     const insertQuery = `
       INSERT INTO Bookings (
-        member_id, sitter_id, pet_type_id, pet_breed, sitter_service_id, start_date, end_date, total_price
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        member_id, sitter_id, pet_type_id, pet_breed, sitter_service_id, service_type_id, start_date, end_date, total_price
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const result = await db.query(insertQuery, [
-      member_id, sitter_id, pet_type_id, pet_breed, sitter_service_id, start_date, end_date, total_price
+      member_id,
+      sitter_id,
+      pet_type_id,
+      pet_breed, // ค่านี้จะไม่เป็น null เพราะเราใช้ค่าว่างเป็น default
+      sitter_service_id,
+      service_type_id,
+      start_date,
+      end_date,
+      total_price
     ]);
-    // ดึง booking_id จาก insertId
     return res.status(200).json({ booking_id: result.insertId });
   } catch (err) {
     console.error("Error in createBooking:", err);
     return res.status(500).json({ message: "Error creating booking" });
   }
 };
+
 
 exports.getBookingsForMember = async (req, res) => {
   const { member_id } = req.params;
@@ -653,6 +687,30 @@ exports.deleteReview = async (req, res) => {
     return res.status(200).json({ message: "ลบรีวิวสำเร็จ" });
   } catch (error) {
     console.error("Error deleting review:", error);
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+  }
+};
+
+exports.getReviewsForSitter = async (req, res) => {
+  const { sitter_id } = req.params;
+  try {
+    // ดึงรีวิวทั้งหมดสำหรับ sitter_id ที่ระบุ
+    const reviews = await db.query("SELECT * FROM Reviews WHERE sitter_id = ?", [sitter_id]);
+
+    // คำนวณค่าเฉลี่ย rating
+    let averageRating = 0;
+    if (reviews.length > 0) {
+      const sum = reviews.reduce((acc, review) => acc + review.rating, 0);
+      averageRating = sum / reviews.length;
+    }
+
+    return res.status(200).json({
+      message: "ดึงรีวิวของพี่เลี้ยงเรียบร้อยแล้ว",
+      reviews,
+      averageRating,
+    });
+  } catch (error) {
+    console.error("Error fetching reviews for sitter:", error);
     return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
   }
 };

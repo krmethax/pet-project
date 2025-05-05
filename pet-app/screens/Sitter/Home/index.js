@@ -29,7 +29,6 @@ export default function Home() {
     totalIncome: 0,
   });
   const [incomeStats, setIncomeStats] = useState([]);
-  const [sitters, setSitters] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
   // ดึง sitter_id จาก AsyncStorage เมื่อ component mount
@@ -50,7 +49,7 @@ export default function Home() {
   // ดึงข้อมูลพี่เลี้ยงจาก API (รวมสถิติ)
   const fetchUser = useCallback(() => {
     if (sitterId) {
-      fetch(`http://192.168.1.10:5000/api/sitter/sitter/${sitterId}`)
+      fetch(`http://192.168.1.8:5000/api/sitter/sitter/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -76,7 +75,7 @@ export default function Home() {
   // ดึงข้อมูลรายได้และงานที่รับไปแล้วจาก API
   const fetchIncomeStats = useCallback(() => {
     if (sitterId) {
-      fetch(`http://192.168.1.10:5000/api/sitter/sitter/income-stats/${sitterId}`)
+      fetch(`http://192.168.1.8:5000/api/sitter/sitter/income-stats/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -106,27 +105,13 @@ export default function Home() {
     }
   }, [sitterId]);
 
-  // ดึงข้อมูลพี่เลี้ยงแนะนำจาก API (สมมุติ endpoint นี้)
-  const fetchRecommendedSitters = useCallback(() => {
-    fetch("http://192.168.1.10:5000/api/auth/sitters")
-      .then((response) => response.json())
-      .then((data) => {
-        console.log("Recommended sitters:", data);
-        setSitters(data.sitters || []);
-      })
-      .catch((error) => {
-        console.error("Error fetching recommended sitters:", error);
-      });
-  }, []);
-
-  // ดึงข้อมูลทั้งหมด
+  // ดึงข้อมูลทั้งหมด (ไม่รวมพี่เลี้ยงแนะนำ)
   const fetchAllData = useCallback(() => {
     if (sitterId) {
       fetchUser();
       fetchIncomeStats();
-      fetchRecommendedSitters();
     }
-  }, [sitterId, fetchUser, fetchIncomeStats, fetchRecommendedSitters]);
+  }, [sitterId, fetchUser, fetchIncomeStats]);
 
   useEffect(() => {
     if (sitterId) {
@@ -197,33 +182,7 @@ export default function Home() {
             </View>
           </TouchableOpacity>
 
-          {/* Section: พี่เลี้ยงแนะนำ */}
-          <View style={styles.recommendedSection}>
-            <Text style={styles.sectionHeader}>พี่เลี้ยงแนะนำ</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {sitters.map((sitterItem) => (
-                <View key={sitterItem.sitter_id} style={styles.sitterCard}>
-                  <Image
-                    source={
-                      sitterItem.profile_image
-                        ? { uri: sitterItem.profile_image }
-                        : require("../../../assets/images/avatar.png")
-                    }
-                    style={styles.sitterImage}
-                  />
-                  <Text style={styles.sitterName} numberOfLines={1}>
-                    {sitterItem.first_name} {sitterItem.last_name}
-                  </Text>
-                  <View style={styles.reviewContainer}>
-                    <AntDesign name="star" size={14} color="#FFC107" />
-                    <Text style={styles.sitterReview}>
-                      {sitterItem.rating ? sitterItem.rating.toFixed(1) : "0.0"}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
+          {/* ส่วนของพี่เลี้ยงแนะนำถูกลบออกแล้ว */}
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -237,7 +196,7 @@ const styles = StyleSheet.create({
   // Header
   header: {
     marginBottom: 25,
-    alignItems: "flex-start", // อยู่มุมซ้าย
+    alignItems: "flex-start",
     width: "100%",
   },
   profileSection: {
@@ -286,49 +245,4 @@ const styles = StyleSheet.create({
   statItem: { alignItems: "center", flex: 1 },
   statValue: { fontSize: 22, fontFamily: "Prompt-Bold", color: "#000" },
   statLabel: { fontSize: 14, fontFamily: "Prompt-Regular", color: "#666" },
-  // Recommended Sitters
-  recommendedSection: { marginBottom: 25 },
-  sectionHeader: {
-    fontSize: 18,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-    marginBottom: 15,
-  },
-  sitterCard: {
-    width: 120,
-    height: 160, // กำหนดความสูงคงที่
-    marginRight: 10,
-    padding: 8,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    justifyContent: "space-between", // ให้ review อยู่ด้านล่างเสมอ
-    alignItems: "center",
-  },
-  sitterImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 8,
-    marginBottom: 5,
-  },
-  sitterName: {
-    fontSize: 14,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-    textAlign: "center",
-  },
-  reviewContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: "100%",
-    justifyContent: "center",
-  },
-  sitterReview: {
-    fontSize: 12,
-    fontFamily: "Prompt-Regular",
-    color: "#666",
-    marginLeft: 4,
-  },
 });

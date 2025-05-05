@@ -17,6 +17,7 @@ import { Picker } from "@react-native-picker/picker";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
+import { AntDesign } from "@expo/vector-icons";
 
 export default function AddJob() {
   const navigation = useNavigation();
@@ -33,19 +34,16 @@ export default function AddJob() {
 
   // ฟิลด์อื่น ๆ
   const [petTypeId, setPetTypeId] = useState("");
-  const [pricingUnit, setPricingUnit] = useState("");
+  // ตั้งค่า pricing unit ให้เป็น state โดยมีค่าเริ่มต้น "per_session"
+  const [pricingUnit, setPricingUnit] = useState("per_session");
   const [serviceImage, setServiceImage] = useState(null); // URI ของรูป (ถ้ามี)
 
   // ตัวเลือกต่าง ๆ ที่ดึงจาก API
   const [serviceTypes, setServiceTypes] = useState([]);
   const [petTypes, setPetTypes] = useState([]);
 
-  // รายการหน่วยราคา (แบบ static)
-  const pricingUnitOptions = [
-    { label: "ต่อการเดิน", value: "per_walk" },
-    { label: "ต่อคืน", value: "per_night" },
-    { label: "ต่อครั้ง", value: "per_session" },
-  ];
+  // รายการหน่วยราคา (แบบ static) – แต่ dropdown นี้มีเพียงตัวเลือกเดียว
+  const pricingUnitOptions = [{ label: "ต่อครั้ง", value: "per_session" }];
 
   // ดึง sitter_id จาก AsyncStorage (ถ้าคุณเคยเก็บหลัง Login)
   useEffect(() => {
@@ -66,7 +64,7 @@ export default function AddJob() {
   useEffect(() => {
     const fetchServiceTypes = async () => {
       try {
-        const response = await fetch("http://192.168.1.10:5000/api/sitter/service-types");
+        const response = await fetch("http://192.168.1.8:5000/api/sitter/service-types");
         if (response.ok) {
           const data = await response.json();
           if (data.serviceTypes && Array.isArray(data.serviceTypes)) {
@@ -88,7 +86,7 @@ export default function AddJob() {
   useEffect(() => {
     const fetchPetTypes = async () => {
       try {
-        const response = await fetch("http://192.168.1.10:5000/api/sitter/pet-types");
+        const response = await fetch("http://192.168.1.8:5000/api/sitter/pet-types");
         if (response.ok) {
           const data = await response.json();
           if (data.petTypes && Array.isArray(data.petTypes)) {
@@ -101,7 +99,6 @@ export default function AddJob() {
         }
       } catch (error) {
         console.error("เกิดข้อผิดพลาดในการดึงประเภทสัตว์เลี้ยง:", error);
-        // ตั้งเป็น static ถ้าล้มเหลว
       }
     };
     fetchPetTypes();
@@ -158,17 +155,17 @@ export default function AddJob() {
   };
 
   /**
-   * เรียก /sitter/add-job เพื่อเพิ่มงาน => ได้ sitter_service_id กลับมา
+   * เรียก /sitter/add-job เพื่อเพิ่มงาน
    */
   const createJob = async () => {
-    if (!serviceTypeId || !petTypeId || !price || !pricingUnit) {
+    if (!serviceTypeId || !petTypeId || !price) {
       Alert.alert("ข้อผิดพลาด", "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน");
-      return null; // return null หมายถึงสร้างงานไม่สำเร็จ
+      return null;
     }
 
-    // เตรียมข้อมูลสำหรับ /sitter/add-job
+    // เราจะตั้งค่าหน่วยการคิดราคาเป็น "per_session" ตามที่เลือกจาก dropdown
     const jobData = {
-      sitter_id: sitterId, // ฝั่งเซิร์ฟเวอร์ต้องการ sitter_id หรือไม่ ดูที่ API
+      sitter_id: sitterId,
       service_type_id: serviceTypeId,
       pet_type_id: petTypeId,
       price: parseFloat(price),
@@ -177,14 +174,13 @@ export default function AddJob() {
       description: description,
     };
 
-    const response = await fetch("http://192.168.1.10:5000/api/sitter/add-job", {
+    const response = await fetch("http://192.168.1.8:5000/api/sitter/add-job", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(jobData),
     });
     const data = await response.json();
-    
-    // เพิ่มการตรวจสอบการตอบกลับจาก API
+
     console.log("Create job response:", data);
 
     if (!response.ok) {
@@ -192,7 +188,7 @@ export default function AddJob() {
       return null;
     }
 
-    return data.job.sitter_service_id; // สมมติฝั่งเซิร์ฟเวอร์ส่ง sitter_service_id กลับมา
+    return data.job.sitter_service_id;
   };
 
   /**
@@ -201,7 +197,7 @@ export default function AddJob() {
   const uploadJobImage = async (sitterServiceId, localUri) => {
     try {
       let formData = new FormData();
-      formData.append("sitter_service_id", sitterServiceId); // ใส่ sitter_service_id
+      formData.append("sitter_service_id", sitterServiceId);
       formData.append("image", {
         uri: localUri,
         name: "job_image.jpg",
@@ -209,15 +205,14 @@ export default function AddJob() {
       });
 
       const response = await fetch(
-        "http://192.168.1.10:5000/api/sitter/upload-job-image",
+        "http://192.168.1.8:5000/api/sitter/upload-job-image",
         {
           method: "POST",
           body: formData,
         }
       );
       const data = await response.json();
-      
-      // เพิ่มการตรวจสอบการตอบกลับจาก API
+
       console.log("Upload image response:", data);
 
       if (!response.ok) {
@@ -234,8 +229,7 @@ export default function AddJob() {
   };
 
   /**
-   * handleSubmit => เรียก createJob => ถ้าสำเร็จจะได้ sitter_service_id
-   * ถ้ามีรูป => เรียก uploadJobImage
+   * handleSubmit => เรียก createJob และถ้ามีรูป จะเรียก uploadJobImage
    */
   const handleSubmit = async () => {
     setLoading(true);
@@ -254,10 +248,11 @@ export default function AddJob() {
       }
 
       Alert.alert("สำเร็จ", "เพิ่มงานและอัปโหลดรูปเรียบร้อยแล้ว!");
+      // รีเซ็ตฟอร์ม
       setServiceTypeId("");
       setPetTypeId("");
       setPrice("");
-      setPricingUnit("");
+      // pricing_unit ถูกตั้งเป็น per_session โดยอัตโนมัติ
       setDuration("");
       setDescription("");
       setServiceImage(null);
@@ -274,12 +269,20 @@ export default function AddJob() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.container}>
-        {/* ส่วนเลือก/แสดงรูปภาพ */}
+        {/* Header: ปุ่มย้อนกลับและหัวข้อ */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <AntDesign name="arrowleft" size={24} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>เพิ่มงานของฉัน</Text>
+        </View>
+
+        {/* ส่วนเลือกรูปภาพบริการ */}
         <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
           {serviceImage ? (
             <Image source={{ uri: serviceImage }} style={styles.image} />
           ) : (
-            <Text style={styles.imagePickerText}>เลือกรูปภาพบริการ (ห้ามเกิน 32MB)</Text>
+            <Text style={styles.imagePickerText}>เลือกรูปภาพบริการ (ไม่เกิน 32MB)</Text>
           )}
         </TouchableOpacity>
 
@@ -307,19 +310,21 @@ export default function AddJob() {
         {/* เลือกประเภทสัตว์เลี้ยง (capsule แนวนอน) */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>ประเภทสัตว์เลี้ยง</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.capsuleContainer}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.capsuleContainer}>
             {petTypes.map((pet) => (
               <TouchableOpacity
                 key={pet.pet_type_id}
-                style={[styles.capsule, petTypeId === pet.pet_type_id && styles.capsuleSelected]}
+                style={[
+                  styles.capsule,
+                  petTypeId === pet.pet_type_id && styles.capsuleSelected,
+                ]}
                 onPress={() => setPetTypeId(pet.pet_type_id)}
               >
                 <Text
-                  style={[styles.capsuleText, petTypeId === pet.pet_type_id && styles.capsuleTextSelected]}
+                  style={[
+                    styles.capsuleText,
+                    petTypeId === pet.pet_type_id && styles.capsuleTextSelected,
+                  ]}
                 >
                   {pet.type_name}
                 </Text>
@@ -328,7 +333,7 @@ export default function AddJob() {
           </ScrollView>
         </View>
 
-        {/* เลือกหน่วยการคิดราคา */}
+        {/* เลือกหน่วยการคิดราคา (dropdown) */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>หน่วยการคิดราคา</Text>
           <View style={styles.pickerContainer}>
@@ -337,13 +342,8 @@ export default function AddJob() {
               onValueChange={(itemValue) => setPricingUnit(itemValue)}
               style={styles.picker}
             >
-              <Picker.Item label="เลือกหน่วยการคิดราคา" value="" />
               {pricingUnitOptions.map((option) => (
-                <Picker.Item
-                  key={option.value}
-                  label={option.label}
-                  value={option.value}
-                />
+                <Picker.Item key={option.value} label={option.label} value={option.value} />
               ))}
             </Picker>
           </View>
@@ -386,12 +386,8 @@ export default function AddJob() {
           />
         </View>
 
-        {/* ปุ่มสำหรับส่งข้อมูลทั้งหมด */}
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
+        {/* ปุ่มสำหรับส่งข้อมูล */}
+        <TouchableOpacity style={styles.addButton} onPress={handleSubmit} disabled={loading}>
           <Text style={styles.addButtonText}>
             {loading ? "กำลังเพิ่ม..." : "เพิ่มงาน"}
           </Text>
@@ -404,59 +400,28 @@ export default function AddJob() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    marginTop: 30,
+    backgroundColor: "#FFF",
+    paddingTop: 40,
   },
   container: {
-    padding: 20,
+    padding: 10,
   },
-  formGroup: {
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 20,
   },
-  label: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    marginBottom: 8,
-    color: "#000",
+  backButton: {
+    marginRight: 20,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#CCC",
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 16,
-    fontFamily: "Prompt-Regular",
-    backgroundColor: "#FFF",
-  },
-  textArea: {
-    height: 100,
-    textAlignVertical: "top",
-  },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: "#CCC",
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  picker: {
-    height: 50,
-    width: "100%",
-  },
-  addButton: {
-    backgroundColor: "#1E90FF",
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 10,
-  },
-  addButtonText: {
+  headerTitle: {
     fontSize: 18,
     fontFamily: "Prompt-Bold",
-    color: "#FFF",
+    color: "#000",
   },
   imagePicker: {
     borderWidth: 1,
-    borderColor: "#CCC",
+    borderColor: "#ddd",
     borderRadius: 8,
     height: 200,
     justifyContent: "center",
@@ -475,6 +440,60 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 8,
   },
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 16,
+    fontFamily: "Prompt-Bold",
+    marginBottom: 8,
+    color: "#000",
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 16,
+    fontFamily: "Prompt-Regular",
+    backgroundColor: "#FFF",
+    color: "#000",
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: "top",
+  },
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  picker: {
+    height: 50,
+    width: "100%",
+  },
+  fixedText: {
+    fontSize: 16,
+    fontFamily: "Prompt-Bold",
+    color: "#000",
+    padding: 10,
+    backgroundColor: "#F5F5F5",
+    borderRadius: 8,
+  },
+  addButton: {
+    backgroundColor: "#FF0000",
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  addButtonText: {
+    fontSize: 18,
+    fontFamily: "Prompt-Bold",
+    color: "#FFF",
+  },
   capsuleContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -483,16 +502,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: "#EEE",
+    backgroundColor: "#ddd",
     marginRight: 10,
   },
   capsuleSelected: {
-    backgroundColor: "#1E90FF",
+    backgroundColor: "#FF0000",
   },
   capsuleText: {
     fontSize: 14,
     fontFamily: "Prompt-Regular",
-    color: "#333",
+    color: "#000",
   },
   capsuleTextSelected: {
     color: "#FFF",

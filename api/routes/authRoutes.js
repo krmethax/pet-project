@@ -64,4 +64,6 @@ router.post('/review', authController.createReview);
 // ลบรีวิว
 router.delete('/review/:review_id/:member_id', authController.deleteReview);
 
+router.get('/reviews/sitter/:sitter_id', authController.getReviewsForSitter);
+
 module.exports = router;

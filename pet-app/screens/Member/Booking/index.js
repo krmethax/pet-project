@@ -51,7 +51,7 @@ export default function Booking() {
   const fetchBookings = useCallback(() => {
     if (memberId) {
       setLoadingBookings(true);
-      fetch(`http://192.168.1.10:5000/api/auth/member/${memberId}/bookings`)
+      fetch(`http://192.168.1.8:5000/api/auth/member/${memberId}/bookings`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -82,7 +82,7 @@ export default function Booking() {
 
   // ดึงข้อมูลประเภทงานจาก API
   useEffect(() => {
-    fetch("http://192.168.1.10:5000/api/auth/service-type")
+    fetch("http://192.168.1.8:5000/api/auth/service-type")
       .then((response) => response.json())
       .then((data) => {
         if (data.serviceTypes) {
@@ -96,7 +96,7 @@ export default function Booking() {
 
   // ดึงข้อมูลประเภทสัตว์เลี้ยงจาก API
   useEffect(() => {
-    fetch("http://192.168.1.10:5000/api/auth/pet-categories")
+    fetch("http://192.168.1.8:5000/api/auth/pet-categories")
       .then((response) => response.json())
       .then((data) => {
         if (data.petCategories) {
@@ -110,7 +110,7 @@ export default function Booking() {
 
   // ดึงข้อมูลบริการของพี่เลี้ยงจาก API
   useEffect(() => {
-    fetch("http://192.168.1.10:5000/api/auth/sitter-services")
+    fetch("http://192.168.1.8:5000/api/auth/sitter-services")
       .then((response) => response.json())
       .then((data) => {
         if (data.services) {
@@ -217,11 +217,14 @@ export default function Booking() {
                     {selectedTab === "review" && (
                       <TouchableOpacity
                         style={styles.reviewButton}
-                        onPress={() => navigation.navigate("Review", {
-                          bookingId: booking.booking_id,
-                          memberId: memberId,      // memberId ควรถูกส่งมาด้วย
-                          sitterId: booking.sitter_id, // หรือ sitterId ที่ถูกต้อง
-                        })}
+                        onPress={() =>
+                          navigation.navigate("Review", {
+                            bookingId: booking.booking_id,
+                            memberId: memberId,
+                            sitterId: booking.sitter_id,
+                            jobDetails: jobRecord, // ส่งรายละเอียดงานทั้งหมดไปที่หน้า Review
+                          })
+                        }
                       >
                         <Text style={styles.reviewButtonText}>รีวิว</Text>
                       </TouchableOpacity>
@@ -422,7 +425,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
   },
-  // Expanded content removed; card displays only summary.
   // Modal styles
   modalOverlay: {
     flex: 1,

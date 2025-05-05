@@ -30,7 +30,7 @@ router.get("/pet-types", sitterController.getPetTypesForSitter);
 router.post('/add-job', sitterController.addJob);
 // Update an existing service
 router.put("/sitter-service/:sitter_service_id", sitterController.updateSitterService);
-// Delete a service
+// Delete a service (ลบงานที่พี่เลี้ยงเพิ่ม)
 router.delete("/sitter-service/:sitter_service_id", sitterController.deleteSitterService);
 // Get all services for a sitter
 router.get("/sitter-services/:sitter_id", sitterController.getSitterServices);
@@ -45,9 +45,10 @@ router.get("/payment-methods/:sitter_id", sitterController.getPaymentMethods);
 router.get("/sitter/income-stats/:sitter_id", sitterController.getPieIncomeStats);
 
 // Upload routes
-// Update profile image (using upload middleware)
 router.post('/update-profile-sitter', upload.single('image'), sitterController.updateProfileSitter);
-// Upload additional job image (handled by uploadController)
 router.post('/sitter/upload-job-image', upload.single('image'), uploadController.uploadJobImage);
+
+
+
 
 module.exports = router;

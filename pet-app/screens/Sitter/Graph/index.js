@@ -132,7 +132,7 @@ export default function Report() {
         console.error("Sitter ID not found");
         return;
       }
-      const response = await fetch(`http://100.116.44.8:5000/api/sitter/sitter/income-stats/${sitterId}`);
+      const response = await fetch(`http://192.168.1.8:5000/api/sitter/sitter/income-stats/${sitterId}`);
       if (!response.ok) {
         const text = await response.text();
         console.error("Income stats response status:", response.status);

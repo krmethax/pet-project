@@ -5,20 +5,18 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   RefreshControl,
+  Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
+import { AntDesign } from "@expo/vector-icons";
 
 export default function AddService() {
   const navigation = useNavigation();
-  const [stats, setStats] = useState({
-    jobsCreated: 0,
-    totalIncome: 0,
-  });
-  const [jobs, setJobs] = useState([]); // เก็บรายงานงาน
+  const [jobs, setJobs] = useState([]); // เก็บรายงานงานที่เปิดอยู่
   const [sitterId, setSitterId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -48,11 +46,11 @@ export default function AddService() {
     getSitterId();
   }, []);
 
-  // ดึงสถิติและรายงานงานจาก API
+  // ดึงรายงานงานจาก API
   const fetchStats = useCallback(() => {
     if (sitterId) {
       setLoading(true);
-      fetch(`http://192.168.1.10:5000/api/sitter/sitter-services/${sitterId}`)
+      fetch(`http://192.168.1.8:5000/api/sitter/sitter-services/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -64,13 +62,9 @@ export default function AddService() {
         })
         .then((data) => {
           console.log("งานที่ดึงมาจาก API:", data);
-          // สมมติว่า API ส่งกลับข้อมูลในรูปแบบ { jobs: [...] }
+          // สมมติว่า API ส่งกลับข้อมูลในรูปแบบ { services: [...] }
           const jobList = data.services ? data.services : [];
           setJobs(jobList);
-          setStats({
-            jobsCreated: jobList.length,
-            totalIncome: 0, // หากมี totalIncome ให้คำนวณตามที่ต้องการ
-          });
           setLoading(false);
           setRefreshing(false);
         })
@@ -84,7 +78,7 @@ export default function AddService() {
     }
   }, [sitterId]);
 
-  // ดึงสถิติเมื่อได้ sitterId
+  // ดึงรายงานงานเมื่อได้ sitterId
   useEffect(() => {
     if (sitterId) {
       fetchStats();
@@ -95,7 +89,7 @@ export default function AddService() {
   useEffect(() => {
     const fetchServiceTypes = async () => {
       try {
-        const response = await fetch("http://192.168.1.10:5000/api/sitter/service-types");
+        const response = await fetch("http://192.168.1.8:5000/api/sitter/service-types");
         if (response.ok) {
           const data = await response.json();
           console.log("ข้อมูลประเภทบริการที่ได้จาก API:", data);
@@ -121,7 +115,7 @@ export default function AddService() {
     fetchStats();
   }, [fetchStats]);
 
-  // ฟังก์ชันนำทางไปยังหน้าจอเพิ่มงาน
+  // ฟังก์ชันนำทางไปยังหน้าจอเพิ่มงานใหม่
   const handleAddJob = () => {
     navigation.navigate("AddJob");
   };
@@ -132,54 +126,91 @@ export default function AddService() {
     return num % 1 === 0 ? num.toFixed(0) : num.toFixed(2);
   };
 
+  // ฟังก์ชันลบงานเชื่อมกับ API สำหรับลบงานที่พี่เลี้ยงเพิ่ม
+  const handleDeleteJob = (jobId) => {
+    Alert.alert("ยืนยัน", "คุณต้องการลบงานนี้หรือไม่?", [
+      {
+        text: "ยกเลิก",
+        style: "cancel",
+      },
+      {
+        text: "ลบ",
+        onPress: async () => {
+          try {
+            const response = await fetch(`http://192.168.1.8:5000/api/sitter/sitter-service/${jobId}`, {
+              method: "DELETE",
+            });
+            const data = await response.json();
+            if (response.ok) {
+              Alert.alert("สำเร็จ", "ลบงานเรียบร้อยแล้ว");
+              // รีเฟรชรายการงานหลังจากลบสำเร็จ
+              fetchStats();
+            } else {
+              Alert.alert("ผิดพลาด", data.message || "ไม่สามารถลบงานได้");
+            }
+          } catch (error) {
+            console.error("Delete job error:", error);
+            Alert.alert("ผิดพลาด", "เกิดข้อผิดพลาดในการลบงาน");
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={styles.scrollContainer}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Card แสดงสถิติ */}
-        <View style={styles.statsCard}>
-          <Text style={styles.statsTitle}>งานของฉัน</Text>
-          <Text style={styles.statsValue}>
-            {loading ? "กำลังโหลด..." : stats.jobsCreated}
-          </Text>
+        {/* Header: มีปุ่ม back และหัวข้อ "งานของฉัน" รวมกันที่ฝั่งซ้าย,
+            ส่วนปุ่ม + อยู่ฝั่งขวา */}
+        <View style={styles.headerContainer}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerTitle}>งานของฉัน</Text>
+          </View>
+          <TouchableOpacity style={styles.plusButton} onPress={handleAddJob}>
+            <AntDesign name="pluscircleo" size={24} color="#000" />
+          </TouchableOpacity>
         </View>
 
-        {/* รายการงาน */}
-        <View style={styles.jobsContainer}>
-          {jobs.map((job, index) => (
-            <View key={job.sitter_service_id} style={styles.jobCard}>
-              <View style={styles.jobInfo}>
-                {/* แสดงชื่อประเภทบริการจาก serviceTypes mapping */}
-                <Text style={styles.jobTitle}>
-                  {(() => {
-                    const serviceType = serviceTypes.find(
-                      (st) => st.service_type_id === job.service_type_id
-                    );
-                    return serviceType ? serviceType.short_name : "ไม่มีข้อมูลประเภทบริการ";
-                  })()}
-                </Text>
-                {/* แสดงรายละเอียดเพิ่มเติม */}
-                <Text style={styles.jobDetail}>
-                  {job.description ? job.description : "ไม่มีข้อมูลรายละเอียด"}
-                </Text>
+        {/* ถ้าไม่มีงานในระบบ จะแสดงข้อความแจ้ง */}
+        {jobs.length === 0 ? (
+          <Text style={styles.noJobsText}>ยังไม่มีงานของคุณ</Text>
+        ) : (
+          <View style={styles.jobsContainer}>
+            {jobs.map((job) => (
+              <View key={job.sitter_service_id} style={styles.card}>
+                <View style={styles.cardContent}>
+                  <Text style={styles.jobTitle}>
+                    {(() => {
+                      const serviceType = serviceTypes.find(
+                        (st) => parseInt(st.service_type_id) === parseInt(job.service_type_id)
+                      );
+                      return serviceType
+                        ? serviceType.short_name
+                        : "ไม่มีข้อมูลประเภทบริการ";
+                    })()}
+                  </Text>
+                  <Text style={styles.jobDetail}>
+                    {job.description ? job.description : "ไม่มีข้อมูลรายละเอียด"}
+                  </Text>
+                </View>
+                {/* Row สำหรับแสดงจำนวนเงินและไอคอนถังขยะ */}
+                <View style={styles.priceRow}>
+                  <Text style={styles.jobAmount}>
+                    {formatPrice(job.price)} บาท /{" "}
+                    {job.pricing_unit ? pricingUnitMapping[job.pricing_unit] : ""}
+                  </Text>
+                  <TouchableOpacity onPress={() => handleDeleteJob(job.sitter_service_id)}>
+                    <AntDesign name="delete" size={24} color="#FF0000" />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={styles.jobAmount}>
-                <Text style={styles.amountText}>
-                  {formatPrice(job.price)} บาท /{" "}
-                  {job.pricing_unit ? pricingUnitMapping[job.pricing_unit] : ""}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* ปุ่มเพิ่มงาน */}
-        <TouchableOpacity style={styles.addButton} onPress={handleAddJob}>
-          <Text style={styles.addButtonText}>เพิ่มงาน</Text>
-        </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -188,85 +219,72 @@ export default function AddService() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    marginTop: 30,
+    backgroundColor: "#FFF",
   },
-  container: {
+  scrollContainer: {
     padding: 20,
-    flexGrow: 1,
+    paddingBottom: 40,
   },
-  // Card สำหรับแสดงสถิติ
-  statsCard: {
-    backgroundColor: "#F5F5F5",
-    borderRadius: 10,
-    padding: 20,
-    marginBottom:20,
+  headerContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    marginBottom: 20,
   },
-  statsTitle: {
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  headerTitle: {
     fontSize: 20,
     fontFamily: "Prompt-Bold",
     color: "#000",
-    marginBottom: 10,
   },
-  statsValue: {
-    fontSize: 28,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
+  plusButton: {
+    // ปุ่ม + อยู่ฝั่งขวา
   },
-  // Container สำหรับรายการงาน
+  noJobsText: {
+    fontSize: 16,
+    fontFamily: "Prompt-Regular",
+    color: "#666",
+    textAlign: "center",
+    marginTop: 20,
+  },
   jobsContainer: {
     marginBottom: 20,
   },
-  // Card ของงานแต่ละงาน
-  jobCard: {
-    flexDirection: "row",
-    backgroundColor: "#FFF",
+  card: {
+    backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 8,
-    padding: 15,
+    borderColor: "#ddd",
+    borderRadius: 5,
     marginBottom: 15,
-    alignItems: "center",
+    padding: 15,
   },
-  jobInfo: {
-    flex: 1,
+  cardContent: {
+    marginBottom: 10,
   },
   jobTitle: {
-    fontSize: 15,
+    fontSize: 18,
     fontFamily: "Prompt-Bold",
     color: "#333",
     marginBottom: 5,
   },
   jobDetail: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Prompt-Regular",
-    color: "#666",
+    color: "#555",
+    marginBottom: 5,
+  },
+  // Row สำหรับจำนวนเงินและไอคอนถังขยะ
+  priceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   jobAmount: {
-    justifyContent: "center",
-    alignItems: "flex-end",
-    marginLeft: 10,
-  },
-  amountText: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Prompt-Bold",
-    color: "#1E90FF",
-  },
-  // ปุ่มเพิ่มงาน
-  addButton: {
-    backgroundColor: "#1E90FF",
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    alignSelf: "center",
-  },
-  addButtonText: {
-    fontSize: 18,
-    fontFamily: "Prompt-Bold",
-    color: "#FFF",
+    color: "#000",
   },
 });

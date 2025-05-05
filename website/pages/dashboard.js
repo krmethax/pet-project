@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import swal from "sweetalert";
 import CountUp from "react-countup";
@@ -19,7 +19,7 @@ export default function Dashboard() {
   // ดึงข้อมูลพี่เลี้ยงจาก API
   useEffect(() => {
     axios
-      .get("http://192.168.1.10:5000/api/admin/get-all-sitters")
+      .get("http://192.168.1.8:5000/api/admin/get-all-sitters")
       .then((res) => {
         if (res.data && res.data.registrations) {
           setRegistrations(res.data.registrations);
@@ -47,6 +47,17 @@ export default function Dashboard() {
     );
   }
 
+  // นับจำนวนแต่ละสถานะ
+  const countPending = registrations.filter(
+    (item) => item.verification_status === "pending"
+  ).length;
+  const countApproved = registrations.filter(
+    (item) => item.verification_status === "approved"
+  ).length;
+  const countRejected = registrations.filter(
+    (item) => item.verification_status === "rejected"
+  ).length;
+
   // ฟังก์ชันสำหรับปิด modal
   const closeModal = () => {
     setSelectedRegistration(null);
@@ -56,18 +67,26 @@ export default function Dashboard() {
   const handleManage = async (decision) => {
     try {
       const response = await axios.post(
-        "http://192.168.1.10:5000/api/admin/update-sitter-status",
+        "http://192.168.1.8:5000/api/admin/update-sitter-status",
         {
           sitter_id: selectedRegistration.sitter_id,
           status: decision,
         }
       );
       if (response.data && response.data.sitter) {
-        swal("Success", `สถานะถูกเปลี่ยนเป็น ${statusMapping[decision]}`, "success");
+        swal(
+          "Success",
+          `สถานะถูกเปลี่ยนเป็น ${statusMapping[decision]}`,
+          "success"
+        );
         setRegistrations((prevRegs) =>
           prevRegs.map((reg) =>
             reg.sitter_id === selectedRegistration.sitter_id
-              ? { ...reg, verification_status: response.data.sitter.verification_status }
+              ? {
+                  ...reg,
+                  verification_status:
+                    response.data.sitter.verification_status,
+                }
               : reg
           )
         );
@@ -86,10 +105,35 @@ export default function Dashboard() {
       <Sidebar />
       <div style={styles.content}>
         <h1 style={styles.heading}>ระบบจัดการพี่เลี้ยง</h1>
-        <div style={styles.summary}>
-          <span style={styles.summaryLabel}>จำนวนการสมัครพี่เลี้ยง:</span>
-          <CountUp end={registrations.length} duration={2} style={styles.summaryCount} />
+        {/* Card สรุปจำนวนพี่เลี้ยงแต่ละประเภท */}
+        <div style={styles.cardContainer}>
+          <div style={styles.card}>
+            <h3 style={styles.cardTitle}>พี่เลี้ยงใหม่</h3>
+            <CountUp
+              end={countPending}
+              duration={2}
+              style={styles.cardCount}
+            />
+          </div>
+          <div style={styles.card}>
+            <h3 style={styles.cardTitle}>พี่เลี้ยงที่อนุมัติ</h3>
+            <CountUp
+              end={countApproved}
+              duration={2}
+              style={styles.cardCount}
+            />
+          </div>
+          <div style={styles.card}>
+            <h3 style={styles.cardTitle}>พี่เลี้ยงที่ปฏิเสธ</h3>
+            <CountUp
+              end={countRejected}
+              duration={2}
+              style={styles.cardCount}
+            />
+          </div>
         </div>
+
+        {/* ตารางแสดงรายละเอียด */}
         {registrations.length === 0 ? (
           <p style={styles.noData}>ยังไม่มีการสมัครพี่เลี้ยงเข้ามา</p>
         ) : (
@@ -110,7 +154,8 @@ export default function Dashboard() {
                   <td style={styles.td}>{item.last_name}</td>
                   <td style={styles.td}>{item.phone}</td>
                   <td style={styles.td}>
-                    {statusMapping[item.verification_status] || item.verification_status}
+                    {statusMapping[item.verification_status] ||
+                      item.verification_status}
                   </td>
                   <td style={styles.td}>
                     <button
@@ -129,9 +174,13 @@ export default function Dashboard() {
         {/* Modal สำหรับตรวจสอบข้อมูล */}
         {selectedRegistration && (
           <div style={styles.modalOverlay} onClick={closeModal}>
-            <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div
+              style={styles.modalContent}
+              onClick={(e) => e.stopPropagation()}
+            >
               <h2 style={styles.modalHeading}>
-                {selectedRegistration.first_name} {selectedRegistration.last_name}
+                {selectedRegistration.first_name}{" "}
+                {selectedRegistration.last_name}
               </h2>
               <p>เบอร์โทร: {selectedRegistration.phone}</p>
               <p>
@@ -204,19 +253,28 @@ const styles = {
     textAlign: "center",
     color: "#333",
   },
-  summary: {
+  cardContainer: {
     display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "space-around",
     marginBottom: "20px",
   },
-  summaryLabel: {
-    marginRight: "10px",
+  card: {
+    flex: "1",
+    margin: "0 10px",
+    padding: "20px",
+    borderRadius: "8px",
+    backgroundColor: "#f2f2f2",
+    textAlign: "center",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+  },
+  cardTitle: {
+    marginBottom: "10px",
+    color: "#333",
     fontSize: "18px",
     fontWeight: "bold",
   },
-  summaryCount: {
-    fontSize: "24px",
+  cardCount: {
+    fontSize: "28px",
     color: "#FF5722",
   },
   noData: {
@@ -308,5 +366,3 @@ const styles = {
     cursor: "pointer",
   },
 };
-
-

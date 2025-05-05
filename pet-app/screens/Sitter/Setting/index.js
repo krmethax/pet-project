@@ -2,30 +2,32 @@ import React, { useState, useEffect } from "react";
 import {
   Text,
   View,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Image,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AntDesign } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
-import { LinearGradient } from "expo-linear-gradient";
+import { AntDesign } from "@expo/vector-icons";
 
 export default function Setting() {
   const navigation = useNavigation();
   const [user, setUser] = useState(null);
   const [sitterId, setSitterId] = useState(null);
 
-  // Retrieve sitter_id from AsyncStorage on mount
+  // ดึง sitter_id จาก AsyncStorage เมื่อ component mount
   useEffect(() => {
     const getSitterId = async () => {
       try {
         const storedSitterId = await AsyncStorage.getItem("sitter_id");
         if (storedSitterId) {
           setSitterId(storedSitterId);
+        } else {
+          // ถ้าไม่มี sitter_id ให้กลับไปหน้า Login
+          navigation.replace("Login");
         }
       } catch (error) {
         console.error("Failed to fetch sitter_id:", error);
@@ -34,10 +36,10 @@ export default function Setting() {
     getSitterId();
   }, []);
 
-  // Fetch sitter data when sitterId is available
+  // ดึงข้อมูลพี่เลี้ยงเมื่อได้ sitterId
   useEffect(() => {
     if (sitterId) {
-      fetch(`http://100.116.44.8:5000/api/sitter/sitter/${sitterId}`)
+      fetch(`http://192.168.1.8:5000/api/sitter/sitter/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -49,7 +51,7 @@ export default function Setting() {
         })
         .then((data) => {
           console.log("Data from server:", data);
-          setUser(data);
+          setUser(data.sitter || data);
         })
         .catch((error) => {
           console.error("Error fetching sitter:", error);
@@ -57,7 +59,7 @@ export default function Setting() {
     }
   }, [sitterId]);
 
-  // Logout handler
+  // ฟังก์ชัน Logout
   const handleLogout = async () => {
     await AsyncStorage.removeItem("sitter_id");
     navigation.replace("Login");
@@ -65,153 +67,144 @@ export default function Setting() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <LinearGradient
-        colors={["#fff", "#fff"]}
-        style={styles.gradientBackground}
-      >
-        <StatusBar style="dark" />
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>การตั้งค่า</Text>
-            <TouchableOpacity onPress={handleLogout}>
-              <AntDesign name="logout" size={24} color="#6A1B9A" />
-            </TouchableOpacity>
-          </View>
+      <StatusBar style="dark" />
+      <View style={styles.container}>
+        {/* ส่วนแสดงรายการเมนูและข้อมูลผู้ใช้ */}
+        <ScrollView
+          style={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <Text style={styles.headerTitle}>ตั้งค่า</Text>
 
-          {/* Profile Section */}
-          <View style={styles.profileSection}>
-            <View style={styles.avatarContainer}>
+          {/* ส่วนแสดงข้อมูลผู้ใช้ */}
+          {user ? (
+            <View style={styles.userInfoContainer}>
               <Image
-                source={require("../../../assets/images/avatar.png")}
+                source={
+                  user.profile_image
+                    ? { uri: user.profile_image }
+                    : require("../../../assets/images/avatar.png")
+                }
                 style={styles.avatar}
               />
-              <View style={styles.verificationBadge}>
-                <Image
-                  source={require("../../../assets/images/verified.png")}
-                  style={styles.verificationIcon}
-                />
+              <View style={styles.userTextContainer}>
+                <Text style={styles.userName}>
+                  {user.first_name?.trim()} {user.last_name?.trim()}
+                </Text>
+                <Text style={styles.userEmail}>{user.email}</Text>
               </View>
             </View>
-            <View style={styles.userInfo}>
-              <Text style={styles.userName}>
-                {user ? `${user.sitter.first_name} ${user.sitter.last_name}` : "ชื่อผู้ใช้"}
-              </Text>
-              <Text style={styles.userEmail}>
-                {user ? user.sitter.email : "อีเมล"}
-              </Text>
-            </View>
-          </View>
+          ) : (
+            <Text style={styles.loadingText}>กำลังโหลดข้อมูลผู้ใช้...</Text>
+          )}
 
-          {/* Options Section */}
-          <View style={styles.optionsContainer}>
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => navigation.navigate("EditProfile")}
-            >
-              <AntDesign name="setting" size={20} color="#6A1B9A" />
-              <Text style={styles.optionText}>แก้ไขข้อมูลส่วนตัว</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.optionItem}>
-              <AntDesign name="infocirlceo" size={20} color="#6A1B9A" />
-              <Text style={styles.optionText}>ข้อมูลแอปพลิเคชัน</Text>
-            </TouchableOpacity>
-            {/* เมนู ตั้งค่าการชำระเงิน */}
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => navigation.navigate("PaymentMethod")}
-            >
-              <AntDesign name="creditcard" size={20} color="#6A1B9A" />
-              <Text style={styles.optionText}>ตั้งค่าการชำระเงิน</Text>
-            </TouchableOpacity>
-          </View>
+          {/* รายการเมนู */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate("EditProfile")}
+          >
+            <Text style={styles.menuText}>แก้ไขข้อมูลส่วนตัว</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem}>
+            <Text style={styles.menuText}>ข้อมูลแอปพลิเคชัน</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate("PaymentMethod")}
+          >
+            <Text style={styles.menuText}>ตั้งค่าการชำระเงิน</Text>
+          </TouchableOpacity>
         </ScrollView>
-      </LinearGradient>
+
+        {/* ปุ่ม Logout อยู่ด้านล่าง */}
+        <View style={styles.bottomContainer}>
+          <TouchableOpacity style={styles.menuItemLogout} onPress={handleLogout}>
+            <Text style={styles.menuTextLogout}>ออกจากระบบ</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  gradientBackground: { flex: 1 },
-  scrollContainer: {
-    padding: 20,
-    paddingBottom: 40,
-    alignItems: "center",
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#FFF",
   },
-  header: {
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 30,
+  container: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 18,
     fontFamily: "Prompt-Bold",
     color: "#000",
+    marginBottom: 20,
   },
-  profileSection: {
-    width: "100%",
+  userInfoContainer: {
+    flexDirection: "row",
     alignItems: "center",
     marginBottom: 30,
   },
-  avatarContainer: {
-    position: "relative",
-  },
   avatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 55,
-    backgroundColor: "#ccc",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 15,
+    resizeMode: "cover",
   },
-  verificationBadge: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    backgroundColor: "#FFF",
-    borderRadius: 12,
-    padding: 4,
-  },
-  verificationIcon: {
-    width: 20,
-    height: 20,
-    resizeMode: "contain",
-  },
-  userInfo: {
-    alignItems: "center",
-    marginTop: 15,
+  userTextContainer: {
+    justifyContent: "center",
   },
   userName: {
+    fontSize: 20,
+    fontFamily: "Prompt-Bold",
+    color: "#000",
+    marginBottom: 2,
+  },
+  userEmail: {
+    fontSize: 16,
+    fontFamily: "Prompt-Regular",
+    color: "#000",
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: "Prompt-Regular",
+    color: "#333",
+    marginBottom: 30,
+  },
+  menuItem: {
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#ccc",
+    marginBottom: 15,
+  },
+  menuText: {
     fontSize: 16,
     fontFamily: "Prompt-Medium",
     color: "#000",
   },
-  userEmail: {
-    fontSize: 13,
-    fontFamily: "Prompt-Regular",
-    color: "#000",
-  },
-  optionsContainer: {
-    width: "100%",
-  },
-  optionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF",
-    paddingVertical: 15,
+  bottomContainer: {
     paddingHorizontal: 20,
-    borderRadius: 10,
-    marginBottom: 15,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    paddingBottom: 20,
   },
-  optionText: {
+  menuItemLogout: {
+    backgroundColor: "#FF0000",
+    borderRadius: 5,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  menuTextLogout: {
     fontSize: 16,
-    fontFamily: "Prompt-Regular",
-    color: "#6A1B9A",
-    marginLeft: 15,
+    fontFamily: "Prompt-Bold",
+    color: "#FFF",
   },
 });

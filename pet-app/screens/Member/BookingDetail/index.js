@@ -12,46 +12,31 @@ import {
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import {
-  Feather,
-  MaterialIcons,
-  FontAwesome,
-  Ionicons,
-} from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import QRCode from "react-native-qrcode-svg";
+import promptpay from "promptpay-qr";
 import * as ImagePicker from "expo-image-picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import moment from "moment";
 
 export default function BookingDetail() {
   const navigation = useNavigation();
   const route = useRoute();
-  // รับค่า job จาก route.params พร้อม fallback เป็น object ว่าง
-  const { job } = route.params || {};
+  // รับ bookingData ที่ส่งมาจากหน้าก่อน (ในตัวอย่างนี้ job คือ bookingData)
+  const { bookingData = {} } = route.params || {};
+  const job = bookingData;
 
-  if (!job) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <Text style={styles.errorText}>ไม่พบข้อมูลงานที่ถูกเลือก</Text>
-      </SafeAreaView>
-    );
-  }
-
-  // State สำหรับเก็บข้อมูลต่างๆ
-  const [sitter, setSitter] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState(null);
-  const [serviceTypes, setServiceTypes] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
-  // slipImage จะเก็บค่าเป็น URI หรือ URL ของรูปที่อัปโหลดแล้ว
-  const [slipImage, setSlipImage] = useState(null);
-  // State สำหรับเก็บอัตราส่วนของรูป (width/height)
-  const [imageAspectRatio, setImageAspectRatio] = useState(null);
-  // State สำหรับเก็บความกว้างของ container ที่ใช้แสดงรูป
-  const [containerWidth, setContainerWidth] = useState(0);
   const [memberId, setMemberId] = useState(null);
+  const [slipImage, setSlipImage] = useState(null);
+  const [imageAspectRatio, setImageAspectRatio] = useState(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState(null);
+  const [serviceTypes, setServiceTypes] = useState([]); // สำหรับข้อมูลประเภทบริการ
+  const [petCategories, setPetCategories] = useState([]); // สำหรับข้อมูลประเภทสัตว์เลี้ยง
 
-  // คำนวณจำนวนเงินจาก job.price
-  const paymentAmount = Math.floor(parseFloat(job.price));
+  const paymentAmount =
+    job && job.total_price ? Math.floor(parseFloat(job.total_price)) : 0;
 
-  // ดึง member_id จาก AsyncStorage
   useEffect(() => {
     const getMemberId = async () => {
       try {
@@ -66,28 +51,53 @@ export default function BookingDetail() {
     getMemberId();
   }, []);
 
-  // ฟังก์ชันดึงข้อมูลพี่เลี้ยง
-  const fetchSitterDetails = useCallback(() => {
-    if (job?.sitter_id) {
-      return fetch(`http://192.168.1.10:5000/api/auth/sitter/${job.sitter_id}`)
-        .then((response) => response.json())
-        .then((data) => {
-          if (data.sitter) {
-            setSitter(data.sitter);
-          }
-        })
-        .catch((error) =>
-          console.error("Error fetching sitter details:", error)
-        );
-    }
-    return Promise.resolve();
-  }, [job?.sitter_id]);
+  // ดึงข้อมูลประเภทบริการ
+  useEffect(() => {
+    fetch("http://192.168.1.8:5000/api/auth/service-type")
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.serviceTypes) {
+          setServiceTypes(data.serviceTypes);
+        } else {
+          setServiceTypes(data);
+        }
+      })
+      .catch((error) =>
+        console.error("Error fetching service types:", error)
+      );
+  }, []);
 
-  // ฟังก์ชันดึงข้อมูลวิธีชำระเงิน
+  // ดึงข้อมูลประเภทสัตว์เลี้ยง
+  useEffect(() => {
+    fetch("http://192.168.1.8:5000/api/auth/pet-categories")
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.petCategories) {
+          setPetCategories(data.petCategories);
+        }
+      })
+      .catch((error) =>
+        console.error("Error fetching pet categories:", error)
+      );
+  }, []);
+
+  const getServiceTypeShortName = (service_type_id) => {
+    const type = serviceTypes.find(
+      (typeItem) => typeItem.service_type_id === service_type_id
+    );
+    return type ? type.short_name : "";
+  };
+
+  // ฟังก์ชันช่วยค้นหาชื่อประเภทสัตว์เลี้ยง (type_name) จาก petCategories
+  const getPetCategoryName = (pet_type_id) => {
+    const category = petCategories.find((cat) => cat.pet_type_id === pet_type_id);
+    return category ? category.type_name : "";
+  };
+
   const fetchPaymentMethod = useCallback(() => {
     if (job?.sitter_id) {
       return fetch(
-        `http://192.168.1.10:5000/api/auth/payment-methods/${job.sitter_id}`
+        `http://192.168.1.8:5000/api/auth/payment-methods/${job.sitter_id}`
       )
         .then((response) => response.json())
         .then((data) => {
@@ -102,41 +112,15 @@ export default function BookingDetail() {
     return Promise.resolve();
   }, [job?.sitter_id]);
 
-  // ฟังก์ชันดึงข้อมูลประเภทบริการ
-  const fetchServiceTypes = useCallback(() => {
-    return fetch("http://192.168.1.10:5000/api/auth/service-type")
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.serviceTypes) {
-          setServiceTypes(data.serviceTypes);
-        } else {
-          setServiceTypes(data);
-        }
-      })
-      .catch((error) =>
-        console.error("Error fetching service types:", error)
-      );
-  }, []);
-
   useEffect(() => {
-    fetchSitterDetails();
     fetchPaymentMethod();
-    fetchServiceTypes();
-  }, [job?.sitter_id, fetchSitterDetails, fetchPaymentMethod, fetchServiceTypes]);
+  }, [job?.sitter_id, fetchPaymentMethod]);
 
-  // ฟังก์ชันรีเฟรชข้อมูล
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    Promise.all([fetchSitterDetails(), fetchPaymentMethod(), fetchServiceTypes()]).finally(() =>
-      setRefreshing(false)
-    );
-  }, [fetchSitterDetails, fetchPaymentMethod, fetchServiceTypes]);
-
-  // ฟังก์ชันเลือกรูปสลิป (ไม่ครอบรูป)
   const pickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const permissionResult =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      alert("ขออภัย, แอปจำเป็นต้องใช้สิทธิ์เข้าถึงคลังรูปภาพ");
+      Alert.alert("แจ้งเตือน", "แอปจำเป็นต้องใช้สิทธิ์เข้าถึงคลังรูปภาพ");
       return;
     }
     let result = await ImagePicker.launchImageLibraryAsync({
@@ -158,115 +142,157 @@ export default function BookingDetail() {
     setImageAspectRatio(null);
   };
 
-  // ฟังก์ชันสำหรับส่งสลิปการจองไปให้ Admin ตรวจสอบ
-  const handleConfirmBooking = async () => {
-    if (!slipImage) {
-      alert("กรุณาอัปโหลดสลิปการชำระเงินก่อนยืนยันการจอง");
-      return;
+  const createBooking = async () => {
+    const createPayload = {
+      member_id: memberId,
+      sitter_id: job.sitter_id,
+      pet_type_id: job.pet_type_id,
+      sitter_service_id: job.sitter_service_id,
+      service_type_id: job.service_type_id,
+      start_date: moment(job.start_date).format("YYYY-MM-DD HH:mm:ss"),
+      end_date: moment(job.end_date).format("YYYY-MM-DD HH:mm:ss"),
+      total_price: job.total_price,
+    };
+
+    const response = await fetch("http://192.168.1.8:5000/api/auth/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(createPayload),
+    });
+    const data = await response.json();
+    if (response.ok) {
+      return data.booking_id;
+    } else {
+      throw new Error(data.message || "ไม่สามารถสร้าง Booking ได้");
     }
+  };
+
+  const uploadSlip = async (bookingId) => {
     const formData = new FormData();
-    formData.append("booking_id", job?.booking_id);
+    formData.append("booking_id", bookingId);
     let filename = slipImage.split("/").pop();
     let match = /\.(\w+)$/.exec(filename);
     let type = match ? `image/${match[1]}` : "image";
     formData.append("image", { uri: slipImage, name: filename, type });
-    try {
-      const response = await fetch(
-        "http://192.168.1.10:5000/api/bookings/upload-payment-slip",
-        {
-          method: "POST",
-          body: formData,
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-      const resData = await response.json();
-      if (response.ok) {
-        alert(resData.message);
-        setSlipImage(resData.url);
-        navigation.navigate("MemberNavigator", { booking_id: job.booking_id });
-      } else {
-        alert("เกิดข้อผิดพลาด: " + resData.message);
+
+    const response = await fetch(
+      "http://192.168.1.8:5000/api/bookings/upload-payment-slip",
+      {
+        method: "POST",
+        body: formData,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       }
-    } catch (error) {
-      console.error("Error submitting booking slip:", error);
-      alert("เกิดข้อผิดพลาดในการส่งสลิป");
+    );
+    const data = await response.json();
+    if (response.ok) {
+      return data;
+    } else {
+      throw new Error(data.message || "อัปโหลดสลิปไม่สำเร็จ");
     }
   };
 
-  if (!sitter) {
+  const handleConfirmBooking = async () => {
+    if (!slipImage) {
+      Alert.alert(
+        "แจ้งเตือน",
+        "กรุณาอัปโหลดสลิปการชำระเงินก่อนยืนยันการจอง"
+      );
+      return;
+    }
+    try {
+      const newBookingId = await createBooking();
+      if (!newBookingId) {
+        Alert.alert("เกิดข้อผิดพลาด", "ไม่พบ booking_id จากการสร้าง booking");
+        return;
+      }
+      const slipResult = await uploadSlip(newBookingId);
+      Alert.alert("สำเร็จ", slipResult.message || "จองและอัปโหลดสลิปเรียบร้อย");
+      navigation.navigate("MemberNavigator", { booking_id: newBookingId });
+    } catch (error) {
+      console.error("Error:", error);
+      Alert.alert("เกิดข้อผิดพลาด", error.message || "ไม่สามารถทำรายการได้");
+    }
+  };
+
+  if (!job || Object.keys(job).length === 0) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <Text style={styles.errorText}>ไม่พบข้อมูลพี่เลี้ยง</Text>
+        <Text style={styles.errorText}>ไม่พบข้อมูลงานที่ถูกเลือก</Text>
       </SafeAreaView>
     );
   }
 
-  // กำหนดค่า QR Code สำหรับ PromptPay (หากมีการใช้งาน)
   const currentPromptpayNumber =
     paymentMethod && paymentMethod.promptpay_number
       ? paymentMethod.promptpay_number
-      : "0812345678";
-  const bankName =
-    paymentMethod && paymentMethod.bank_name ? paymentMethod.bank_name : "ธนาคารไม่ระบุ";
+      : null;
 
-  // ดึงชื่อประเภทบริการจาก job
-  const serviceTypeName =
-    serviceTypes.find((st) => st.service_type_id === job?.service_type_id)?.short_name ||
-    "ไม่ระบุ";
+  const bankDisplay =
+    job.sitter_first_name && job.sitter_last_name
+      ? `${job.sitter_first_name} ${job.sitter_last_name}`
+      : "ไม่ระบุ";
+
+  const promptPayQR = currentPromptpayNumber
+    ? promptpay(currentPromptpayNumber, paymentAmount)
+    : "";
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Feather name="arrow-left" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>รายละเอียดการจอง</Text>
       </View>
-      <ScrollView
-        contentContainerStyle={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Card 1: รายละเอียดงานและข้อมูลพี่เลี้ยง */}
+
+      <ScrollView contentContainerStyle={styles.container}>
         <View style={[styles.card, styles.cardTop]}>
-          <Text style={[styles.jobTitle, styles.leftAlignedText]}>{job.description}</Text>
-          <Text style={[styles.serviceTypeText, styles.leftAlignedText]}>
-            ประเภทบริการ: {serviceTypeName}
+          <Text style={styles.titleText}>
+            {job.description || "ไม่มีรายละเอียดเพิ่มเติม"}
           </Text>
-          {sitter && (
-            <View style={styles.sitterInfoContainer}>
-              <Text style={[styles.sitterInfo, styles.leftAlignedText]}>
-                ชื่อ: {sitter.first_name} {sitter.last_name}
-              </Text>
-              <Text style={[styles.sitterInfo, styles.leftAlignedText]}>
-                เบอร์โทร: {sitter.phone}
-              </Text>
-            </View>
-          )}
+          <Text style={styles.subTitle}>
+            {/* หาก job.service_type_name ว่าง ใช้ getServiceTypeShortName */}
+            ประเภทบริการ:{" "}
+            {job.service_type_name ||
+              getServiceTypeShortName(job.service_type_id) ||
+              "ไม่ระบุ"}
+          </Text>
+          {/* เพิ่มการแสดงประเภทสัตว์เลี้ยง โดยใช้ property pet_type หากมี หรือใช้ getPetCategoryName กับ pet_type_id */}
+          <Text style={styles.subTitle}>
+            ประเภทสัตว์เลี้ยง:{" "}
+            {job.pet_type || getPetCategoryName(job.pet_type_id) || "ไม่ระบุ"}
+          </Text>
+          <Text style={styles.subTitle}>
+            ชื่อ: {job.sitter_first_name || "ไม่ระบุ"} {job.sitter_last_name || ""}
+          </Text>
+          <Text style={styles.subTitle}>
+            เบอร์โทร: {job.sitter_phone || "ไม่ระบุ"}
+          </Text>
         </View>
 
-        {/* Card 2: รายละเอียดการชำระเงิน */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>ชำระเงิน</Text>
-          <Text style={styles.jobPrice}>ราคา: {paymentAmount} บาท</Text>
-          <View style={styles.qrContainer}>
-            <QRCode
-              value={currentPromptpayNumber + paymentAmount}
-              size={150}
-              backgroundColor="#fff"
-              color="#000"
-            />
-          </View>
+          <Text style={styles.priceText}>฿ {paymentAmount}</Text>
+          {currentPromptpayNumber ? (
+            <View style={styles.qrContainer}>
+              <QRCode value={promptPayQR} size={180} backgroundColor="#fff" color="#000" />
+            </View>
+          ) : (
+            <Text style={[styles.errorText, { textAlign: "center", marginTop: 10 }]}>
+              พบปัญหาในการชำระเงิน (ไม่มีข้อมูล PromptPay)
+            </Text>
+          )}
           <View style={styles.paymentInfo}>
-            <Text style={styles.paymentInfoText}>PromptPay: {currentPromptpayNumber}</Text>
-            <Text style={styles.paymentInfoText}>ธนาคาร: {bankName}</Text>
+            <Text style={styles.paymentInfoText}>
+              PromptPay: {currentPromptpayNumber || "ไม่ระบุ"}
+            </Text>
+            <Text style={styles.paymentInfoText}>พี่เลี้ยง: {bankDisplay}</Text>
           </View>
         </View>
 
-        {/* Card 3: อัปโหลดสลิปการชำระเงิน */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>อัปโหลดสลิปการชำระเงิน</Text>
           <TouchableOpacity
@@ -274,7 +300,7 @@ export default function BookingDetail() {
               styles.imageContainer,
               slipImage && imageAspectRatio && containerWidth
                 ? { height: containerWidth / imageAspectRatio }
-                : { height: 200 },
+                : { height: 220 },
             ]}
             onPress={pickImage}
             activeOpacity={0.8}
@@ -289,15 +315,15 @@ export default function BookingDetail() {
               </>
             ) : (
               <View style={styles.placeholder}>
+                <Ionicons name="images" size={36} color="#ccc" style={{ marginBottom: 8 }} />
                 <Text style={styles.placeholderText}>แตะเพื่อเลือกรูปภาพ</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
 
-        {/* ปุ่มยืนยันการจอง */}
         <TouchableOpacity
-          style={[styles.confirmButton, (!slipImage) && styles.confirmButtonDisabled]}
+          style={[styles.confirmButton, !slipImage && styles.confirmButtonDisabled]}
           onPress={handleConfirmBooking}
           disabled={!slipImage}
         >
@@ -313,64 +339,41 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 15,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
     backgroundColor: "#fff",
-    marginBottom: 10,
   },
   backButton: { padding: 5 },
-  headerTitle: { fontSize: 18, fontFamily: "Prompt-Medium", color: "#000", marginLeft: 10 },
-  container: { padding: 20, paddingBottom: 40 },
+  headerTitle: { fontSize: 18, fontFamily: "Prompt-Bold", color: "#000", marginLeft: 10 },
+  container: { padding: 16, paddingBottom: 40 },
   card: {
     backgroundColor: "#fff",
     borderRadius: 10,
-    padding: 20,
-    marginBottom: 20,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: "#000",
     shadowOpacity: 0.05,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  cardTop: { alignItems: "flex-start" },
-  leftAlignedText: { textAlign: "left", width: "100%" },
-  jobTitle: { fontSize: 22, fontFamily: "Prompt-Bold", color: "#000", marginBottom: 10 },
-  jobPrice: { fontSize: 18, fontFamily: "Prompt-Bold", color: "#FF0000", textAlign: "center", marginBottom: 15 },
-  serviceTypeText: { fontSize: 16, fontFamily: "Prompt-Regular", color: "#000", marginBottom: 10 },
-  sitterInfoContainer: { marginTop: 10, alignItems: "flex-start" },
-  sitterInfo: { fontSize: 16, fontFamily: "Prompt-Regular", color: "#000", marginBottom: 5 },
-  sectionTitle: { fontSize: 18, fontFamily: "Prompt-Bold", color: "#000", textAlign: "center", marginBottom: 15 },
-  qrContainer: { alignItems: "center", marginBottom: 15 },
-  paymentInfo: { alignItems: "center" },
-  paymentInfoText: { fontSize: 16, fontFamily: "Prompt-Regular", color: "#000", marginBottom: 5, textAlign: "center" },
-  imageContainer: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    overflow: "hidden",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 15,
-  },
+  cardTop: { marginTop: 10 },
+  titleText: { fontSize: 18, fontFamily: "Prompt-Bold", color: "#000", marginBottom: 6 },
+  subTitle: { fontSize: 14, fontFamily: "Prompt-Medium", color: "#333", marginBottom: 4 },
+  sectionTitle: { fontSize: 16, fontFamily: "Prompt-Bold", color: "#000", textAlign: "center", marginBottom: 10 },
+  priceText: { fontSize: 22, fontFamily: "Prompt-Bold", color: "#FF0000", textAlign: "center", marginBottom: 12 },
+  qrContainer: { alignItems: "center", marginBottom: 12 },
+  paymentInfo: { alignItems: "center", marginTop: 4 },
+  paymentInfoText: { fontSize: 14, fontFamily: "Prompt-Medium", color: "#000", marginBottom: 4, textAlign: "center" },
+  imageContainer: { borderWidth: 1, borderColor: "#ddd", borderRadius: 10, overflow: "hidden", justifyContent: "center", alignItems: "center" },
   slipImage: { flex: 1, width: "100%", height: "100%" },
-  deleteIcon: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    borderRadius: 15,
-    padding: 5,
-  },
-  placeholder: { flex: 1, justifyContent: "center", alignItems: "center" },
-  placeholderText: { fontSize: 16, color: "#808080" },
-  confirmButton: {
-    backgroundColor: "#000",
-    borderRadius: 25,
-    paddingVertical: 15,
-    alignItems: "center",
-    marginHorizontal: 20,
-  },
+  deleteIcon: { position: "absolute", top: 8, right: 8, backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 16, padding: 4 },
+  placeholder: { justifyContent: "center", alignItems: "center" },
+  placeholderText: { fontSize: 14, color: "#808080", fontFamily: "Prompt-Regular" },
+  confirmButton: { backgroundColor: "#000", borderRadius: 25, paddingVertical: 14, alignItems: "center", marginHorizontal: 20 },
   confirmButtonDisabled: { opacity: 0.5 },
   confirmButtonText: { fontSize: 16, fontFamily: "Prompt-Bold", color: "#fff" },
+  errorText: { fontSize: 14, fontFamily: "Prompt-Regular", color: "#f00" },
 });

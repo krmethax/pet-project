@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Text,
   View,
@@ -7,7 +7,6 @@ import {
   ScrollView,
   RefreshControl,
   Image,
-  Modal,
   Dimensions,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -22,20 +21,16 @@ const scale = SCREEN_WIDTH / 375;
 export default function Home() {
   const navigation = useNavigation();
 
-  // States
+  // State สำหรับข้อมูลผู้ใช้ (สมาชิก), พี่เลี้ยง, ประเภทสัตว์เลี้ยง และ rating ของพี่เลี้ยง
   const [user, setUser] = useState(null);
   const [memberId, setMemberId] = useState(null);
-  const [sitters, setSitters] = useState([]); // ข้อมูลพี่เลี้ยงทั้งหมด
-  const [serviceTypes, setServiceTypes] = useState([]); // ประเภทงาน
+  const [sitters, setSitters] = useState([]);
+  const [petCategories, setPetCategories] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  // state สำหรับเก็บ rating ของพี่เลี้ยง (mapping: sitter_id -> averageRating)
+  const [ratings, setRatings] = useState({});
 
-  // Multi‑Select filter states (เลือกประเภทงาน)
-  const [selectedServiceTypes, setSelectedServiceTypes] = useState([]);
-
-  // Modal visibility สำหรับเลือกประเภทงานเพิ่มเติม
-  const [modalVisible, setModalVisible] = useState(false);
-
-  // ดึง memberId จาก AsyncStorage เมื่อ component mount
+  // ดึง memberId จาก AsyncStorage
   useEffect(() => {
     const getMemberId = async () => {
       try {
@@ -50,10 +45,10 @@ export default function Home() {
     getMemberId();
   }, []);
 
-  // ดึงข้อมูลผู้ใช้ (Header)
+  // ดึงข้อมูลผู้ใช้ (สมาชิก)
   const fetchUser = useCallback(() => {
     if (!memberId) return;
-    fetch(`http://192.168.1.10:5000/api/auth/member/${memberId}`)
+    fetch(`http://192.168.1.9:5000/api/auth/member/${memberId}`)
       .then((res) => res.json())
       .then((data) => setUser(data))
       .catch((err) => console.error("Error fetching user:", err));
@@ -61,30 +56,57 @@ export default function Home() {
 
   // ดึงข้อมูลพี่เลี้ยงทั้งหมด
   const fetchSitters = useCallback(() => {
-    fetch("http://192.168.1.10:5000/api/auth/sitters")
+    fetch("http://192.168.1.9:5000/api/auth/sitters")
       .then((res) => res.json())
-      .then((data) => setSitters(data.sitters || []))
+      .then((data) => {
+        setSitters(data.sitters || []);
+      })
       .catch((err) => console.error("Error fetching sitters:", err));
   }, []);
 
-  // ดึงข้อมูลประเภทงาน (serviceTypes)
-  const fetchServiceTypes = useCallback(() => {
-    fetch("http://192.168.1.10:5000/api/auth/service-type")
+  // ดึงข้อมูลประเภทสัตว์เลี้ยงจาก API
+  const fetchPetCategories = useCallback(() => {
+    fetch("http://192.168.1.9:5000/api/auth/pet-categories")
       .then((res) => res.json())
-      .then((data) => setServiceTypes(data.serviceTypes || []))
-      .catch((err) => console.error("Error fetching service types:", err));
+      .then((data) => setPetCategories(data.petCategories || []))
+      .catch((err) => console.error("Error fetching pet categories:", err));
   }, []);
 
-  // ดึงข้อมูลทั้งหมด
+  // ฟังก์ชันดึงข้อมูลทั้งหมด
   const fetchAllData = useCallback(() => {
-    if (memberId) fetchUser();
+    if (memberId) {
+      fetchUser();
+    }
     fetchSitters();
-    fetchServiceTypes();
-  }, [memberId, fetchUser, fetchSitters, fetchServiceTypes]);
+    fetchPetCategories();
+  }, [memberId, fetchUser, fetchSitters, fetchPetCategories]);
 
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
+
+  // ดึงค่าเฉลี่ย rating ของพี่เลี้ยงแต่ละคนจาก API reviews
+  useEffect(() => {
+    const fetchRatings = async () => {
+      let newRatings = {};
+      for (let sitter of sitters) {
+        try {
+          const response = await fetch(
+            `http://192.168.1.9:5000/api/auth/reviews/sitter/${sitter.sitter_id}`
+          );
+          const data = await response.json();
+          newRatings[sitter.sitter_id] = data.averageRating || 0;
+        } catch (error) {
+          console.error("Error fetching rating for sitter", sitter.sitter_id, error);
+          newRatings[sitter.sitter_id] = 0;
+        }
+      }
+      setRatings(newRatings);
+    };
+    if (sitters.length > 0) {
+      fetchRatings();
+    }
+  }, [sitters]);
 
   // ฟังก์ชัน Refresh
   const onRefresh = useCallback(() => {
@@ -93,45 +115,9 @@ export default function Home() {
     setRefreshing(false);
   }, [fetchAllData]);
 
-  // กรองพี่เลี้ยงตามประเภทงานและจังหวัดของสมาชิก (ถ้ามีข้อมูล)
-  const filteredSitters = useMemo(() => {
-    return sitters.filter((s) => {
-      const serviceMatch =
-        selectedServiceTypes.length === 0 ||
-        selectedServiceTypes.includes(s.service_type_id);
-      const provinceMatch =
-        user &&
-        user.member &&
-        user.member.province &&
-        s.province &&
-        s.province.toLowerCase().trim() === user.member.province.toLowerCase().trim();
-      return serviceMatch && provinceMatch;
-    });
-  }, [sitters, selectedServiceTypes, user]);
-
-  // คำนวณ jobTypesToShow สำหรับกริดหน้าจอ
-  const jobTypesToShow = useMemo(() => {
-    // คัดลอกข้อมูลประเภทงานทั้งหมด
-    let arr = [...serviceTypes];
-    // หากมีมากกว่า 7 รายการ ให้นำรายการที่ 6 (index 5) มาแทนที่ด้วย object ที่ระบุว่าเป็น "more"
-    if (arr.length > 7) {
-      arr.splice(5, 0, { more: true });
-    }
-    return arr;
-  }, [serviceTypes]);
-
-  // Navigation to sitter profile
+  // เมื่อกดที่ Sitter ให้ไปหน้า ProfileSitter พร้อมส่ง sitter_id
   const handleNavigateToProfileSitter = (sitterId) => {
     navigation.navigate("ProfileSitter", { sitter_id: sitterId });
-  };
-
-  // Toggle Service Type (ประเภทงาน)
-  const toggleServiceType = (serviceTypeId) => {
-    setSelectedServiceTypes((prev) =>
-      prev.includes(serviceTypeId)
-        ? prev.filter((id) => id !== serviceTypeId)
-        : [...prev, serviceTypeId]
-    );
   };
 
   return (
@@ -139,267 +125,222 @@ export default function Home() {
       <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header: แสดงรูปโปรไฟล์และชื่อ-นามสกุล (แบบ HomeSitter) */}
+        <View style={styles.headerContainer}>
           <View style={styles.profileSection}>
-            <View style={styles.avatar}>
-              {user && user.member && user.member.profile_image ? (
-                <Image source={{ uri: user.member.profile_image }} style={styles.avatarImage} />
-              ) : (
-                <AntDesign name="user" size={24 * scale} color="#000" />
-              )}
-            </View>
+            {user && user.member && user.member.profile_image ? (
+              <Image
+                source={{ uri: user.member.profile_image }}
+                style={styles.profileAvatar}
+              />
+            ) : (
+              <View style={styles.profileAvatar}>
+                <AntDesign name="user" size={24 * scale} color="#FFF" />
+              </View>
+            )}
             <View style={styles.greeting}>
               <Text style={styles.greetingText}>สวัสดี</Text>
-              <Text style={styles.subGreeting}>
-                {user ? `${user.member.first_name} ${user.member.last_name}` : "ผู้เยี่ยมชม"}
-              </Text>
+              {user && user.member && (
+                <Text style={styles.headerText}>
+                  {user.member.first_name} {user.member.last_name}
+                </Text>
+              )}
             </View>
           </View>
         </View>
 
-        {/* แสดงประเภทงานในรูปแบบกริด 2 แถว 4 วงกลมต่อแถว */}
-        <View style={styles.jobTypesContainer}>
-          {jobTypesToShow.map((job, index) => {
-            if (job.more) {
-              return (
-                <TouchableOpacity
-                  key="more"
-                  style={[styles.jobTypeCircle, styles.moreCircle]}
-                  onPress={() => setModalVisible(true)}
-                >
-                  <AntDesign name="ellipsis1" size={24 * scale} color="#FFF" />
-                </TouchableOpacity>
-              );
-            } else {
-              return (
-                <TouchableOpacity
-                  key={job.service_type_id}
-                  style={[
-                    styles.jobTypeCircle,
-                    selectedServiceTypes.includes(job.service_type_id) &&
-                      styles.jobTypeCircleSelected,
-                  ]}
-                  onPress={() => toggleServiceType(job.service_type_id)}
-                >
-                  <Text
-                    style={[
-                      styles.jobTypeText,
-                      selectedServiceTypes.includes(job.service_type_id) &&
-                        styles.jobTypeTextSelected,
-                    ]}
-                  >
-                    {job.short_name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }
-          })}
+        {/* Banner Image */}
+        <View style={styles.bannerContainer}>
+          <Image
+            source={require("../../../assets/images/allpet.jpg")}
+            style={styles.bannerImage}
+          />
         </View>
 
-        {/* Display Selected Filters */}
-        {selectedServiceTypes.length > 0 && (
-          <View style={styles.selectedFiltersContainer}>
-            {selectedServiceTypes.map((id) => {
-              const svc = serviceTypes.find((s) => s.service_type_id === id);
-              return svc ? (
-                <View key={id} style={styles.selectedFilterCapsule}>
-                  <Text style={styles.selectedFilterText}>{svc.short_name}</Text>
-                </View>
-              ) : null;
-            })}
-          </View>
-        )}
+        {/* ประเภทสัตว์เลี้ยง */}
+        <View style={styles.petTypeContainer}>
+          <Text style={styles.sectionTitle}>ประเภทสัตว์เลี้ยง</Text>
+          <TouchableOpacity style={styles.showMoreButton}>
+            <Text style={styles.showMoreText}>แสดงเพิ่มเติม</Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Section: พี่เลี้ยง (เฉพาะพี่เลี้ยงในจังหวัดเดียวกับสมาชิกที่เลือกประเภทงาน) */}
-        <Text style={styles.sectionTitle}>พี่เลี้ยงใกล้ฉัน</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sitterAvatarRow}>
-          {filteredSitters.length > 0 ? (
-            filteredSitters.map((sitter) => (
-              <TouchableOpacity
-                key={sitter.sitter_id}
-                style={styles.sitterAvatarContainer}
-                onPress={() => handleNavigateToProfileSitter(sitter.sitter_id)}
-              >
-                <View style={styles.sitterAvatarWrapper}>
-                  {sitter.profile_image ? (
-                    <Image source={{ uri: sitter.profile_image }} style={styles.sitterAvatarImage} />
-                  ) : (
-                    <View style={styles.sitterPlaceholder}>
-                      <AntDesign name="user" size={28 * scale} color="#FFF" />
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.sitterAvatarName}>{sitter.first_name}</Text>
-                <View style={styles.ratingContainer}>
-                  <FontAwesome name="star" size={14 * scale} color="#FFD700" style={styles.starIcon} />
-                  <Text style={styles.ratingText}>{sitter.rating ? sitter.rating.toFixed(1) : "0.0"}</Text>
-                </View>
-              </TouchableOpacity>
+        {/* แสดงประเภทสัตว์เลี้ยงเป็นแนวนอน */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.petTypeScroll}
+        >
+          {petCategories.length > 0 ? (
+            petCategories.map((item) => (
+              <View key={item.pet_type_id} style={styles.petTypeItem}>
+                <Text style={styles.petTypeItemText}>{item.type_name}</Text>
+              </View>
             ))
           ) : (
-            <Text style={styles.noServicesText}>ไม่พบพี่เลี้ยงบริเวณนี้</Text>
+            <Text style={styles.noServicesText}>ไม่พบประเภทสัตว์เลี้ยง</Text>
           )}
         </ScrollView>
 
-        {/* Modal สำหรับเลือกประเภทงานเพิ่มเติม */}
-        <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>เลือกประเภทงาน</Text>
-              <ScrollView contentContainerStyle={styles.modalGrid}>
-                <View style={styles.modalGridContainer}>
-                  {serviceTypes.map((job) => (
-                    <TouchableOpacity
-                      key={job.service_type_id}
-                      style={[
-                        styles.jobTypeCircle,
-                        selectedServiceTypes.includes(job.service_type_id) &&
-                          styles.jobTypeCircleSelected,
-                      ]}
-                      onPress={() => toggleServiceType(job.service_type_id)}
-                    >
-                      <Text
-                        style={[
-                          styles.jobTypeText,
-                          selectedServiceTypes.includes(job.service_type_id) &&
-                            styles.jobTypeTextSelected,
-                        ]}
-                      >
-                        {job.short_name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-              <TouchableOpacity style={styles.modalCloseButton} onPress={() => setModalVisible(false)}>
-                <Text style={styles.modalCloseButtonText}>ปิด</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        {/* พี่เลี้ยง: แสดงแบบแนวนอน */}
+        <Text style={styles.sectionTitle}>พี่เลี้ยง</Text>
+        {sitters.filter((sitter) => sitter.verification_status === "approved")
+          .length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {sitters
+              .filter((sitter) => sitter.verification_status === "approved")
+              .map((sitter) => (
+                <TouchableOpacity
+                  key={sitter.sitter_id}
+                  style={styles.sitterAvatarContainer}
+                  onPress={() => handleNavigateToProfileSitter(sitter.sitter_id)}
+                >
+                  <View style={styles.sitterAvatarWrapper}>
+                    {sitter.profile_image ? (
+                      <Image
+                        source={{ uri: sitter.profile_image }}
+                        style={styles.sitterAvatarImage}
+                      />
+                    ) : (
+                      <View style={styles.sitterPlaceholder}>
+                        <AntDesign name="user" size={28 * scale} color="#FFF" />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.sitterAvatarName}>{sitter.first_name}</Text>
+                  <View style={styles.ratingContainer}>
+                    <FontAwesome
+                      name="star"
+                      size={14 * scale}
+                      color="#FFD700"
+                      style={styles.starIcon}
+                    />
+                    <Text style={styles.ratingText}>
+                      {ratings[sitter.sitter_id]
+                        ? ratings[sitter.sitter_id].toFixed(1)
+                        : "0.0"}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+          </ScrollView>
+        ) : (
+          <Text style={styles.noServicesText}>ไม่พบพี่เลี้ยง</Text>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#FFF" },
-  scrollContent: { padding: 20 },
-  // Header
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 25 * scale,
-  },
-  profileSection: { flexDirection: "row", alignItems: "center" },
-  avatar: {
-    width: 50 * scale,
-    height: 50 * scale,
-    borderRadius: (50 * scale) / 2,
+  safeArea: {
+    flex: 1,
     backgroundColor: "#FFF",
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  // Header
+  headerContainer: {
+    marginTop: 10 * scale,
+    marginBottom: 20 * scale,
+  },
+  profileSection: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  profileAvatar: {
+    width: 60 * scale,
+    height: 60 * scale,
+    borderRadius: 30 * scale,
+    backgroundColor: "#000",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12 * scale,
-    borderWidth: 1,
-    borderColor: "#E52020",
   },
-  avatarImage: { width: "100%", height: "100%", borderRadius: (50 * scale) / 2 },
-  greeting: {},
-  greetingText: { fontSize: 20 * scale, fontFamily: "Prompt-Bold", color: "#000" },
-  subGreeting: { fontSize: 16 * scale, fontFamily: "Prompt-Regular", color: "#555" },
-  // Job Types Grid
-  jobTypesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 20 * scale,
+  greeting: {
+    flexDirection: "column",
   },
-  jobTypeCircle: {
-    width: 70 * scale,
-    height: 70 * scale,
-    borderRadius: (70 * scale) / 2,
-    backgroundColor: "#FFF",
-    borderWidth: 1,
-    borderColor: "#E52020",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 15 * scale,
-  },
-  jobTypeCircleSelected: {
-    backgroundColor: "#E52020",
-  },
-  jobTypeText: {
-    fontSize: 14 * scale,
-    fontFamily: "Prompt-Regular",
-    color: "#E52020",
-    textAlign: "center",
-  },
-  jobTypeTextSelected: {
-    color: "#FFF",
-  },
-  moreCircle: {
-    backgroundColor: "#E52020",
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    backgroundColor: "#FFF",
-    borderRadius: 20 * scale,
-    padding: 20 * scale,
-    width: "90%",
-    maxHeight: "80%",
-  },
-  modalTitle: {
-    fontSize: 22 * scale,
+  greetingText: {
+    fontSize: 18 * scale,
     fontFamily: "Prompt-Bold",
     color: "#000",
-    marginBottom: 15 * scale,
-    textAlign: "center",
   },
-  modalGrid: {
-    paddingVertical: 10 * scale,
-  },
-  modalGridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  modalCloseButton: {
-    backgroundColor: "#E52020",
-    paddingVertical: 10 * scale,
-    borderRadius: 10 * scale,
-    alignItems: "center",
-    marginTop: 10 * scale,
-  },
-  modalCloseButtonText: {
+  headerText: {
     fontSize: 16 * scale,
-    fontFamily: "Prompt-Bold",
-    color: "#FFF",
+    fontFamily: "Prompt-Regular",
+    color: "#000",
+    marginTop: 5 * scale,
   },
-  // Sitters (Horizontal Avatar List)
-  sitterAvatarRow: { marginBottom: 20 * scale },
-  sitterAvatarContainer: { width: 80 * scale, alignItems: "center", marginRight: 20 * scale },
+  // Banner Image Styles
+  bannerContainer: {
+    marginBottom: 20 * scale,
+  },
+  bannerImage: {
+    width: "100%",
+    height: 200 * scale,
+    resizeMode: "cover",
+    borderRadius: 10 * scale,
+  },
+  // Pet Types
+  petTypeContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10 * scale,
+  },
+  showMoreButton: {
+    padding: 5 * scale,
+  },
+  showMoreText: {
+    fontSize: 14 * scale,
+    color: "#E52020",
+    fontFamily: "Prompt-Regular",
+  },
+  petTypeScroll: {
+    marginBottom: 20 * scale,
+  },
+  petTypeItem: {
+    backgroundColor: "#FFF",
+    borderColor: "#E52020",
+    borderWidth: 1,
+    borderRadius: 20 * scale,
+    paddingVertical: 5 * scale,
+    paddingHorizontal: 15 * scale,
+    marginRight: 10 * scale,
+  },
+  petTypeItemText: {
+    fontSize: 14 * scale,
+    color: "#E52020",
+    fontFamily: "Prompt-Regular",
+  },
+  // Sitter list (Horizontal)
+  sitterAvatarContainer: {
+    width: 80 * scale,
+    alignItems: "center",
+    marginRight: 20 * scale,
+  },
   sitterAvatarWrapper: {
     width: 70 * scale,
     height: 70 * scale,
-    borderRadius: 15 * scale,
+    borderRadius: 70 * scale,
     backgroundColor: "#ccc",
     overflow: "hidden",
     marginBottom: 8 * scale,
     justifyContent: "center",
     alignItems: "center",
   },
-  sitterAvatarImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  sitterAvatarImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
   sitterPlaceholder: {
     width: "100%",
     height: "100%",
@@ -407,35 +348,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  sitterAvatarName: { fontSize: 16 * scale, fontFamily: "Prompt-Regular", color: "#000" },
-  ratingContainer: { flexDirection: "row", alignItems: "center", marginTop: 2 * scale },
-  starIcon: { marginRight: 3 * scale },
-  ratingText: { fontSize: 14 * scale, fontFamily: "Prompt-Regular", color: "#000" },
-  // Sitters Fallback Text
-  noServicesText: {
-    textAlign: "center",
-    fontSize: 18 * scale,
+  sitterAvatarName: {
+    fontSize: 14 * scale,
     fontFamily: "Prompt-Regular",
     color: "#000",
-    marginTop: 20 * scale,
   },
-  // Selected Filters Display
-  selectedFiltersContainer: {
+  ratingContainer: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 20 * scale,
+    alignItems: "center",
+    marginTop: 2 * scale,
   },
-  selectedFilterCapsule: {
-    paddingVertical: 5 * scale,
-    paddingHorizontal: 10 * scale,
-    borderRadius: 15 * scale,
-    backgroundColor: "#E52020",
-    marginRight: 5 * scale,
-    marginBottom: 5 * scale,
+  starIcon: {
+    marginRight: 3 * scale,
   },
-  selectedFilterText: {
-    fontSize: 12 * scale,
+  ratingText: {
+    fontSize: 14 * scale,
     fontFamily: "Prompt-Regular",
-    color: "#FFF",
+    color: "#000",
+  },
+  noServicesText: {
+    textAlign: "center",
+    fontSize: 16 * scale,
+    fontFamily: "Prompt-Regular",
+    color: "#000",
   },
 });

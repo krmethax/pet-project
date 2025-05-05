@@ -15,17 +15,20 @@ import { AntDesign } from '@expo/vector-icons';
 export default function Review() {
   const navigation = useNavigation();
   const route = useRoute();
-  // รับค่า bookingId, memberId, sitterId จาก route.params
-  const { bookingId, memberId, sitterId } = route.params;
+  // รับค่า bookingId, memberId, sitterId และ jobDetails จาก route.params
+  const { bookingId, memberId, sitterId, jobDetails } = route.params;
   console.log('Route params:', route.params);
 
-  
-  const [rating, setRating] = useState(0); // คะแนนเป็นตัวเลข (1-5)
+  // กำหนด jobTitle และ jobDescription จาก jobDetails
+  const jobTitle = jobDetails ? jobDetails.description : '';
+  // ในที่นี้ใช้ราคาเป็นข้อมูลเพิ่มเติมใน jobDescription
+  const jobDescription = jobDetails ? `ราคา: ${jobDetails.price} บาท` : '';
+
+  const [rating, setRating] = useState(0); // คะแนน (1-5)
   const [reviewText, setReviewText] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleStarPress = (star) => {
-    // ถ้ากดดาวที่เลือกอยู่แล้ว (rating เท่ากับ star) ให้ยกเลิกเฉพาะดาวที่กด (ลด rating ลง 1)
     if (rating === star) {
       setRating(star - 1);
     } else {
@@ -33,7 +36,6 @@ export default function Review() {
     }
   };
   
-
   const handleSubmitReview = async () => {
     if (rating === 0 || !reviewText) {
       Alert.alert('กรุณากรอกข้อมูลให้ครบถ้วน', 'โปรดให้คะแนนและเขียนรีวิว');
@@ -41,7 +43,7 @@ export default function Review() {
     }
     setLoading(true);
     try {
-      const response = await fetch('http://192.168.1.10:5000/api/auth/review', {
+      const response = await fetch('http://192.168.1.8:5000/api/auth/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -87,13 +89,31 @@ export default function Review() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      {/* Header with back arrow and title */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <AntDesign name="arrowleft" size={24} color="#FF0000" />
+          <AntDesign name="arrowleft" size={24} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>รีวิวการจอง</Text>
+        <Text style={styles.headerTitle}>รีวิว</Text>
       </View>
+
+      {/* ส่วนแสดงรายละเอียดงาน (Job Details) */}
+      {jobDetails && (
+        <View style={styles.jobContainer}>
+          <Text style={styles.jobTitle}>{jobTitle}</Text>
+          {jobDescription !== '' && (
+            <Text style={styles.jobDescription}>{jobDescription}</Text>
+          )}
+          {/* แสดง short_name ถ้ามี โดยจะแสดงข้อความ "Service Type:" ตามด้วยค่า */}
+          {jobDetails.short_name && (
+            <Text style={styles.jobDescription}>
+              Service Type: {jobDetails.short_name}
+            </Text>
+          )}
+          {/* สามารถเพิ่มรายละเอียดเพิ่มเติมจาก jobDetails ได้ที่นี่ */}
+        </View>
+      )}
+
       <View style={styles.formContainer}>
         {renderStars()}
         <Text style={styles.label}>ข้อความรีวิว:</Text>
@@ -137,6 +157,25 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: 'Prompt-Bold',
     color: '#000',
+  },
+  jobContainer: {
+    marginBottom: 20,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 5,
+    backgroundColor: '#f9f9f9',
+  },
+  jobTitle: {
+    fontSize: 18,
+    fontFamily: 'Prompt-Bold',
+    color: '#000',
+    marginBottom: 5,
+  },
+  jobDescription: {
+    fontSize: 16,
+    fontFamily: 'Prompt-Regular',
+    color: '#555',
   },
   formContainer: {
     flex: 1,

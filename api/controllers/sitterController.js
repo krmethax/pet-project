@@ -6,9 +6,6 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 
-// ... rest of your code
-
-
 // ใช้ memoryStorage เพื่อเก็บไฟล์ใน memory
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
@@ -77,6 +74,10 @@ exports.uploadSitterImage = async (req, res) => {
     }
 };
 
+/**
+ * Update Profile Sitter
+ * รองรับทั้งการส่งไฟล์ผ่าน req.file (อัปโหลดไปยัง ImgBB) และการส่ง URL โดยตรงใน req.body.profile_image
+ */
 exports.updateProfileSitter = async (req, res) => {
     try {
         const {
@@ -101,11 +102,9 @@ exports.updateProfileSitter = async (req, res) => {
             // อัปโหลดไฟล์ไปยัง ImgBB API
             const base64Image = req.file.buffer.toString('base64');
             const apiKey = 'af23e8c14cbf97c99b6e3bbbe3d6aefa';
-            // กำหนด expiration เป็น 0 (ไม่หมดอายุ) หรือกำหนดเป็นจำนวนวินาทีที่ต้องการ
             const expiration = 0;
             const imgbbUrl = `https://api.imgbb.com/1/upload?key=${apiKey}&expiration=${expiration}`;
 
-            // ใช้ URLSearchParams เพื่อส่งข้อมูล image (เป็น Base64)
             const params = new URLSearchParams();
             params.append('image', base64Image);
 
@@ -123,7 +122,6 @@ exports.updateProfileSitter = async (req, res) => {
             profileImageUrl = profile_image;
         }
 
-        // แปลง undefined เป็น null หากไม่ได้ส่งค่ามา
         const addressVal = typeof address === 'undefined' ? null : address;
         const provinceVal = typeof province === 'undefined' ? null : province;
         const amphureVal = typeof amphure === 'undefined' ? null : amphure;
@@ -175,63 +173,24 @@ exports.updateProfileSitter = async (req, res) => {
 };
 
 /**
- * ฟังก์ชันสำหรับสุ่ม OTP 6 หลัก
- */
-function generateOTP() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
-/**
- * ฟังก์ชันสำหรับส่งอีเมล OTP ผ่าน SMTP (ใช้ Nodemailer)
- */
-async function sendOTPEmailSMTP(email, otp) {
-    // สร้าง transporter สำหรับส่งอีเมลผ่าน SMTP
-    const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com', // ใช้ Gmail SMTP
-        port: 587,
-        secure: false, // ใช้ TLS
-        auth: {
-            user: 'methasit6061@gmail.com',      // เปลี่ยนเป็นอีเมลจริงของคุณ
-            pass: 'glxb vlyf zmva cyqq',           // เปลี่ยนเป็นรหัสผ่านของอีเมลของคุณ
-        },
-    });
-
-    // กำหนด mail options (ข้อความภาษาไทย)
-    const mailOptions = {
-        from: '"Pet Sitter App" <your_email@gmail.com>',
-        to: email,
-        subject: 'รหัส OTP สำหรับการยืนยันตัวตน',
-        text: `รหัส OTP ของคุณคือ: ${otp} (มีอายุ 10 นาที)`,
-    };
-
-    // ส่งอีเมล
-    await transporter.sendMail(mailOptions);
-    console.log(`ส่ง OTP ${otp} ไปยังอีเมล: ${email} ผ่าน SMTP แล้ว`);
-}
-
-/**
  * Register Sitter
  */
 exports.registerSitter = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // ตรวจสอบข้อมูลเบื้องต้น
         if (!email || !password) {
             return res.status(400).json({ message: 'กรุณากรอกอีเมลและรหัสผ่าน' });
         }
 
-        // ตรวจสอบว่ามีอีเมลนี้อยู่ในระบบหรือไม่
         const checkQuery = 'SELECT * FROM Pet_Sitters WHERE email = ?';
         const checkResult = await db.query(checkQuery, [email]);
         if (checkResult.length > 0) {
             return res.status(400).json({ message: 'อีเมลนี้ได้ลงทะเบียนไว้แล้ว' });
         }
 
-        // เข้ารหัสรหัสผ่านด้วย bcrypt
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // สร้าง record ใหม่ในตาราง Pet_Sitters  
         const insertQuery = `
           INSERT INTO Pet_Sitters (
             email, password, first_name, last_name, phone, profile_image, address, province, amphure, tambon, experience, rating, verification_status, created_at, updated_at
@@ -245,14 +204,12 @@ exports.registerSitter = async (req, res) => {
         const otp = generateOTP();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-        // บันทึก OTP ลงในตาราง Verify_OTP_Sitter
         const insertOtpQuery = `
           INSERT INTO Verify_OTP_Sitter (sitter_id, otp_code, expires_at, is_verified, created_at, updated_at)
           VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `;
         await db.query(insertOtpQuery, [sitter_id, otp, expiresAt]);
 
-        // ส่ง OTP ไปที่อีเมลของผู้สมัคร
         await sendOTPEmailSMTP(email, otp);
 
         return res.status(200).json({
@@ -266,331 +223,36 @@ exports.registerSitter = async (req, res) => {
 };
 
 /**
- * Update Profile Sitter
+ * Helper function สำหรับสุ่ม OTP 6 หลัก
  */
-exports.updateProfileSitter = async (req, res) => {
-    try {
-        const {
-            sitter_id,
-            first_name,
-            last_name,
-            phone,
-            profile_image,
-            address,
-            province,
-            amphure,
-            tambon,
-            experience
-        } = req.body;
-
-        if (!sitter_id || !first_name || !last_name || !phone) {
-            return res.status(400).json({ message: "กรุณากรอกข้อมูลที่จำเป็นให้ครบ" });
-        }
-
-        // แปลง undefined เป็น null หากไม่ได้ส่งค่ามา
-        const profileImageVal = typeof profile_image === 'undefined' ? null : profile_image;
-        const addressVal = typeof address === 'undefined' ? null : address;
-        const provinceVal = typeof province === 'undefined' ? null : province;
-        const amphureVal = typeof amphure === 'undefined' ? null : amphure;
-        const tambonVal = typeof tambon === 'undefined' ? null : tambon;
-        const experienceVal = typeof experience === 'undefined' ? null : experience;
-
-        const updateQuery = `
-          UPDATE Pet_Sitters
-          SET first_name = ?,
-              last_name = ?,
-              phone = ?,
-              profile_image = ?,
-              address = ?,
-              province = ?,
-              amphure = ?,
-              tambon = ?,
-              experience = ?,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE sitter_id = ?
-        `;
-        const updateResult = await db.query(updateQuery, [
-            first_name,
-            last_name,
-            phone,
-            profileImageVal,
-            addressVal,
-            provinceVal,
-            amphureVal,
-            tambonVal,
-            experienceVal,
-            sitter_id
-        ]);
-
-        if (updateResult.affectedRows === 0) {
-            return res.status(404).json({ message: "ไม่พบพี่เลี้ยงที่ต้องการอัปเดต" });
-        }
-
-        const selectQuery = `SELECT * FROM Pet_Sitters WHERE sitter_id = ?`;
-        const rows = await db.query(selectQuery, [sitter_id]);
-
-        return res.status(200).json({
-            message: "อัปเดตโปรไฟล์สำเร็จ",
-            sitter: rows[0]
-        });
-    } catch (error) {
-        console.error("Update Profile Sitter error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
+function generateOTP() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
 
 /**
- * Get all services for a given sitter.
- * URL: GET /api/sitter-services/:sitter_id
+ * ฟังก์ชันสำหรับส่งอีเมล OTP ผ่าน SMTP (ใช้ Nodemailer)
  */
-exports.getSitterServices = async (req, res) => {
-    try {
-        const { sitter_id } = req.params;
-        if (!sitter_id) {
-            return res.status(400).json({ message: "Sitter ID is required" });
-        }
-        const query = `
-      SELECT 
-        sitter_service_id,
-        sitter_id,
-        service_type_id,
-        pet_type_id,
-        price,
-        pricing_unit,
-        duration,
-        description,
-        service_image,
-        created_at,
-        updated_at
-      FROM Sitter_Services
-      WHERE sitter_id = ?
-      ORDER BY created_at DESC
-    `;
-        const services = await db.query(query, [sitter_id]);
-        return res.status(200).json({ services });
-    } catch (error) {
-        console.error("Error fetching sitter services:", error);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-};
+async function sendOTPEmailSMTP(email, otp) {
+    const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
+        auth: {
+            user: 'methasit6061@gmail.com',
+            pass: 'glxb vlyf zmva cyqq',
+        },
+    });
 
-/**
- * Create a new sitter service.
- * URL: POST /api/sitter-services
- * Expected JSON body:
- * {
- *   sitter_id,
- *   service_type_id,
- *   pet_type_id,
- *   price,
- *   pricing_unit, // 'per_walk' | 'per_night' | 'per_session'
- *   duration,     // optional
- *   description,  // optional
- *   service_image // optional (a URL or Base64 string, depending on your design)
- * }
- */
-exports.createSitterService = async (req, res) => {
-    try {
-        const {
-            sitter_id,
-            service_type_id,
-            pet_type_id,
-            price,
-            pricing_unit,
-            duration,
-            description,
-            service_image,
-        } = req.body;
+    const mailOptions = {
+        from: '"Pet Sitter App" <your_email@gmail.com>',
+        to: email,
+        subject: 'รหัส OTP สำหรับการยืนยันตัวตน',
+        text: `รหัส OTP ของคุณคือ: ${otp} (มีอายุ 10 นาที)`,
+    };
 
-        // Validate required fields
-        if (!sitter_id || !service_type_id || !pet_type_id || !price || !pricing_unit) {
-            return res.status(400).json({ message: "Please provide all required fields" });
-        }
-
-        // SQL Statement ที่แก้ไขแล้ว (ต้องมี pet_type_id และ pricing_unit)
-        const insertQuery = `
-      INSERT INTO Sitter_Services (
-        sitter_id,
-        service_type_id,
-        pet_type_id,
-        price,
-        pricing_unit,
-        duration,
-        description,
-        service_image,
-        created_at,
-        updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `;
-
-
-        const values = [
-            sitter_id,
-            service_type_id,
-            pet_type_id,
-            price,
-            pricing_unit,
-            duration || null,
-            description || null,
-            service_image || null,
-        ];
-
-
-        // Log request body and values array เพื่อดูว่าเราส่งอะไรไป
-        console.log("Request body:", req.body);
-        console.log("Values array for INSERT:", values);
-
-        const result = await db.query(insertQuery, values);
-
-        // Retrieve the newly created record
-        const selectQuery = `SELECT * FROM Sitter_Services WHERE sitter_service_id = ?`;
-        const newService = await db.query(selectQuery, [result.insertId]);
-
-        return res.status(200).json({
-            message: "Sitter service created successfully",
-            service: newService[0],
-        });
-    } catch (error) {
-        console.error("Create Sitter Service error:", error);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-};
-
-
-/**
- * Update an existing sitter service.
- * URL: PUT /api/sitter-services/:sitter_service_id
- * Expected JSON body (all fields optional except sitter_service_id):
- * {
- *   price,
- *   pricing_unit,
- *   duration,
- *   description,
- *   service_image
- * }
- */
-exports.updateSitterService = async (req, res) => {
-    try {
-        const { sitter_service_id } = req.params;
-        if (!sitter_service_id) {
-            return res.status(400).json({ message: "Sitter Service ID is required" });
-        }
-
-        // Build dynamic update query
-        const fields = [];
-        const values = [];
-        const allowedFields = ["price", "pricing_unit", "duration", "description", "service_image"];
-        allowedFields.forEach(field => {
-            if (req.body[field] !== undefined) {
-                fields.push(`${field} = ?`);
-                values.push(req.body[field]);
-            }
-        });
-
-        if (fields.length === 0) {
-            return res.status(400).json({ message: "No fields provided for update" });
-        }
-
-        // Append sitter_service_id for WHERE clause
-        values.push(sitter_service_id);
-
-        const updateQuery = `
-      UPDATE Sitter_Services
-      SET ${fields.join(", ")}, updated_at = CURRENT_TIMESTAMP
-      WHERE sitter_service_id = ?
-    `;
-
-        const updateResult = await db.query(updateQuery, values);
-        if (updateResult.affectedRows === 0) {
-            return res.status(404).json({ message: "Sitter service not found" });
-        }
-
-        // Retrieve updated record
-        const selectQuery = `SELECT * FROM Sitter_Services WHERE sitter_service_id = ?`;
-        const updatedService = await db.query(selectQuery, [sitter_service_id]);
-
-        return res.status(200).json({
-            message: "Sitter service updated successfully",
-            service: updatedService[0]
-        });
-    } catch (error) {
-        console.error("Update Sitter Service error:", error);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-};
-
-/**
- * Delete a sitter service.
- * URL: DELETE /api/sitter-services/:sitter_service_id
- */
-exports.createSitterService = async (req, res) => {
-    try {
-        // รับค่าจาก req.body รวม pet_type_id และ pricing_unit ด้วย
-        const {
-            sitter_id,
-            service_type_id,
-            pet_type_id,
-            price,
-            pricing_unit,
-            duration,
-            description,
-            service_image,
-        } = req.body;
-
-        // ตรวจสอบว่ามีค่าที่จำเป็นครบถ้วน
-        if (!sitter_id || !service_type_id || !pet_type_id || !price || !pricing_unit) {
-            return res.status(400).json({ message: "Please provide all required fields" });
-        }
-
-        // SQL Query ที่แก้ไขแล้วให้รวม pet_type_id และ pricing_unit
-        const insertQuery = `
-          INSERT INTO Sitter_Services (
-            sitter_id,
-            service_type_id,
-            pet_type_id,
-            price,
-            pricing_unit,
-            duration,
-            description,
-            service_image,
-            created_at,
-            updated_at
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        `;
-
-        const values = [
-            sitter_id,
-            service_type_id,
-            pet_type_id,       // ต้องส่งค่า pet_type_id จาก req.body
-            price,
-            pricing_unit,      // ต้องส่งค่าใน ENUM ที่ถูกต้อง
-            duration || null,
-            description || null,
-            service_image || null,
-        ];
-
-        // Log ค่าที่ได้รับมา (สำหรับ debug)
-        console.log("Request body:", req.body);
-        console.log("Values array for INSERT:", values);
-
-        const result = await db.query(insertQuery, values);
-
-        // ดึง record ที่เพิ่งสร้างจาก insertId
-        const selectQuery = `SELECT * FROM Sitter_Services WHERE sitter_service_id = ?`;
-        const newService = await db.query(selectQuery, [result.insertId]);
-
-        return res.status(200).json({
-            message: "Sitter service created successfully",
-            service: newService[0],
-        });
-    } catch (error) {
-        console.error("Create Sitter Service error:", error);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-};
+    await transporter.sendMail(mailOptions);
+    console.log(`ส่ง OTP ${otp} ไปยังอีเมล: ${email} ผ่าน SMTP แล้ว`);
+}
 
 /**
  * Get Sitter
@@ -771,45 +433,44 @@ exports.getJobs = async (req, res) => {
     try {
         const sitterId = req.params.sitter_id;
         if (!sitterId) {
-            return res.status(400).json({ message: "Sitter ID is required" });
+            return res.status(400).json({ message: "กรุณาระบุ Sitter ID" });
         }
 
         const query = `
-  SELECT 
-    b.booking_id,
-    b.member_id,
-    b.sitter_id,
-    b.pet_type_id,
-    b.pet_breed,
-    b.sitter_service_id,
-    b.start_date,
-    b.end_date,
-    b.status,
-    b.total_price,
-    b.payment_status,
-    b.created_at,
-    b.updated_at,
-    m.first_name,
-    m.last_name,
-    st.short_name
-  FROM Bookings b
-  LEFT JOIN Members m ON b.member_id = m.member_id
-  LEFT JOIN Service_Types st ON b.sitter_service_id = st.service_type_id
-  WHERE b.sitter_id = ?
-  ORDER BY b.created_at DESC
-`;
-
+        SELECT 
+          b.booking_id,
+          b.member_id,
+          b.sitter_id,
+          b.pet_type_id,
+          b.pet_breed,
+          b.sitter_service_id,
+          b.service_type_id,
+          b.start_date,
+          b.end_date,
+          b.status,
+          b.agreement_status,
+          b.total_price,
+          b.payment_status,
+          b.slip_image,
+          b.created_at,
+          b.updated_at,
+          ss.description AS sitter_service_description
+        FROM Bookings b
+        LEFT JOIN Sitter_Services ss ON b.sitter_service_id = ss.sitter_service_id
+        WHERE b.sitter_id = ?
+        ORDER BY b.created_at DESC;
+      `;
 
         const result = await db.query(query, [sitterId]);
         return res.status(200).json({ jobs: result });
     } catch (error) {
         console.error("Error fetching jobs:", error);
-        return res.status(500).json({ message: "Internal server error" });
+        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
     }
 };
 
 /**
- * Create Sitter Service
+ * Create Sitter Service (Add Job)
  */
 exports.addJob = async (req, res) => {
     try {
@@ -824,7 +485,6 @@ exports.addJob = async (req, res) => {
             service_image
         } = req.body;
 
-        // ตรวจสอบข้อมูลที่จำเป็น
         if (!sitter_id || !service_type_id || !pet_type_id || !price || !pricing_unit) {
             return res.status(400).json({ message: "กรุณากรอกข้อมูลที่จำเป็นให้ครบ" });
         }
@@ -855,6 +515,9 @@ exports.addJob = async (req, res) => {
             service_image || null
         ];
 
+        console.log("Request body:", req.body);
+        console.log("Values array for INSERT:", values);
+
         const result = await db.query(insertQuery, values);
         const insertedId = result.insertId;
 
@@ -868,147 +531,6 @@ exports.addJob = async (req, res) => {
     } catch (error) {
         console.error("Add Job error:", error);
         return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-/**
- * Get Service Types
- */
-exports.getServiceTypes = async (req, res) => {
-    try {
-        const query = `
-        SELECT 
-          service_type_id,
-          short_name,
-          full_description,
-          created_at,
-          updated_at
-        FROM Service_Types
-        ORDER BY service_type_id ASC
-      `;
-        const result = await db.query(query);
-        return res.status(200).json({ serviceTypes: result });
-    } catch (error) {
-        console.error("Error fetching service types:", error);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-};
-
-exports.getPetTypesForSitter = async (req, res) => {
-    try {
-        const query = `
-        SELECT 
-          pet_type_id,
-          type_name,
-          description,
-          created_at,
-          updated_at
-        FROM Pet_Types
-        ORDER BY pet_type_id ASC
-      `;
-        const result = await db.query(query);
-        return res.status(200).json({ petTypes: result });
-    } catch (error) {
-        console.error("Error fetching pet types for sitter:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-exports.addJob = async (req, res) => {
-    try {
-        // รับข้อมูลใหม่เพิ่มเติม: pet_type_id, pricing_unit, service_image
-        const {
-            sitter_id,
-            service_type_id,
-            pet_type_id,
-            price,
-            pricing_unit,
-            duration, // หากบริการที่คิดราคาแบบบางประเภทมีระยะเวลา ให้ส่งมาด้วย
-            description,
-            service_image // สามารถส่งเป็น Base64 หรือ URL ตามที่คุณออกแบบไว้
-        } = req.body;
-
-        // ตรวจสอบข้อมูลที่จำเป็น (ปรับตามความต้องการ)
-        if (!sitter_id || !service_type_id || !pet_type_id || !price || !pricing_unit) {
-            return res.status(400).json({ message: "กรุณากรอกข้อมูลที่จำเป็นให้ครบ" });
-        }
-
-        // สร้าง record ใหม่ในตาราง Sitter_Services
-        const insertQuery = `
-        INSERT INTO Sitter_Services (
-          sitter_id,
-          service_type_id,
-          pet_type_id,
-          price,
-          pricing_unit,
-          duration,
-          description,
-          service_image,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      `;
-        const values = [
-            sitter_id,
-            service_type_id,
-            pet_type_id,
-            price,
-            pricing_unit,
-            duration || null,
-            description || null,
-            service_image || null
-        ];
-
-        const result = await db.query(insertQuery, values);
-        const insertedId = result.insertId;
-
-        // ดึงข้อมูล record ที่ถูก insert ใหม่
-        const selectQuery = `SELECT * FROM Sitter_Services WHERE sitter_service_id = ?`;
-        const rows = await db.query(selectQuery, [insertedId]);
-
-        return res.status(200).json({
-            message: "เพิ่มงานเรียบร้อยแล้ว",
-            job: rows[0]
-        });
-    } catch (error) {
-        console.error("Add Job error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-exports.getJobs = async (req, res) => {
-    try {
-        const sitterId = req.params.sitter_id;
-        if (!sitterId) {
-            return res.status(400).json({ message: "Sitter ID is required" });
-        }
-
-        const query = `
-        SELECT 
-          booking_id,
-          member_id,
-          sitter_id,
-          pet_type_id,
-          pet_breed,
-          sitter_service_id,
-          start_date,
-          end_date,
-          status,
-          total_price,
-          payment_status,
-          created_at,
-          updated_at
-        FROM Bookings
-        WHERE sitter_id = ?
-        ORDER BY created_at DESC
-      `;
-        const result = await db.query(query, [sitterId]);
-
-        // Return the result, even if it's an empty array.
-        return res.status(200).json({ jobs: result });
-    } catch (error) {
-        console.error("Error fetching jobs:", error);
-        return res.status(500).json({ message: "Internal server error" });
     }
 };
 
@@ -1070,423 +592,57 @@ exports.deleteSitterService = async (req, res) => {
         await db.query(deleteQuery, [sitter_service_id]);
 
         return res.status(200).json({
-            message: "ลบงานสำเร็จ",
+            message: "ลบงานเรียบร้อยแล้ว",
             service: deletedService
         });
     } catch (error) {
         console.error("Delete Sitter Service error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/* Payment Methods APIs */
-
-/**
- * Add Payment Method
- */
-exports.addPaymentMethod = async (req, res) => {
-    try {
-        const { sitter_id, promptpay_number } = req.body;
-        if (!sitter_id || !promptpay_number) {
-            return res.status(400).json({ message: "กรุณาระบุข้อมูลที่จำเป็นให้ครบ" });
-        }
-
-        const insertQuery = `
-        INSERT INTO Payment_Methods (sitter_id, promptpay_number, created_at, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      `;
-        const insertResult = await db.query(insertQuery, [sitter_id, promptpay_number]);
-        const insertedId = insertResult.insertId;
-        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
-        const rows = await db.query(selectQuery, [insertedId]);
-
-        return res.status(200).json({
-            message: "เพิ่มวิธีการชำระเงินเรียบร้อยแล้ว",
-            paymentMethod: rows[0]
-        });
-    } catch (error) {
-        console.error("Add Payment Method error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์", error: error.message });
     }
 };
 
 /**
- * Update Payment Method
+ * Get Service Types
  */
-exports.updatePaymentMethod = async (req, res) => {
+exports.getServiceTypes = async (req, res) => {
     try {
-        const { payment_method_id, promptpay_number } = req.body;
-        if (!payment_method_id || !promptpay_number) {
-            return res.status(400).json({ message: "กรุณาระบุข้อมูลที่ต้องการแก้ไขให้ครบ" });
-        }
-
-        const updateQuery = `
-        UPDATE Payment_Methods
-        SET promptpay_number = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE payment_method_id = ?
-        `;
-        const updateResult = await db.query(updateQuery, [promptpay_number, payment_method_id]);
-        if (updateResult.affectedRows === 0) {
-            return res.status(404).json({ message: "ไม่พบวิธีการชำระเงินที่ต้องการแก้ไข" });
-        }
-        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
-        const rows = await db.query(selectQuery, [payment_method_id]);
-
-        return res.status(200).json({
-            message: "แก้ไขวิธีการชำระเงินเรียบร้อยแล้ว",
-            paymentMethod: rows[0]
-        });
-    } catch (error) {
-        console.error("Update Payment Method error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Delete Payment Method
- */
-exports.deletePaymentMethod = async (req, res) => {
-    try {
-        const { payment_method_id } = req.params;
-        if (!payment_method_id) {
-            return res.status(400).json({ message: "กรุณาระบุรหัสวิธีการชำระเงินที่ต้องการลบ" });
-        }
-
-        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
-        const rows = await db.query(selectQuery, [payment_method_id]);
-        if (rows.length === 0) {
-            return res.status(404).json({ message: "ไม่พบวิธีการชำระเงินที่ต้องการลบ" });
-        }
-        const deletedPaymentMethod = rows[0];
-
-        const deleteQuery = `DELETE FROM Payment_Methods WHERE payment_method_id = ?`;
-        await db.query(deleteQuery, [payment_method_id]);
-
-        return res.status(200).json({
-            message: "ลบวิธีการชำระเงินเรียบร้อยแล้ว",
-            paymentMethod: deletedPaymentMethod
-        });
-    } catch (error) {
-        console.error("Delete Payment Method error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Get Payment Methods
- */
-exports.getPaymentMethods = async (req, res) => {
-    try {
-        const { sitter_id } = req.params;
-        if (!sitter_id) {
-            return res.status(400).json({ message: "กรุณาระบุ Sitter ID" });
-        }
-
         const query = `
         SELECT 
-          payment_method_id,
-          sitter_id,
-          promptpay_number,
+          service_type_id,
+          short_name,
+          full_description,
           created_at,
           updated_at
-        FROM Payment_Methods
-        WHERE sitter_id = ?
-        ORDER BY created_at DESC
+        FROM Service_Types
+        ORDER BY service_type_id ASC
       `;
-        const result = await db.query(query, [sitter_id]);
-        return res.status(200).json({ paymentMethods: result });
+        const result = await db.query(query);
+        return res.status(200).json({ serviceTypes: result });
     } catch (error) {
-        console.error("Error fetching payment methods:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+        console.error("Error fetching service types:", error);
+        return res.status(500).json({ message: "Internal server error" });
     }
 };
 
 /**
- * Get Sitter Jobs (ร่วมกับข้อมูลของสมาชิก)
+ * Get Pet Types สำหรับพี่เลี้ยง
  */
-exports.getSitterJobs = async (req, res) => {
+exports.getPetTypesForSitter = async (req, res) => {
     try {
-        const sitterId = req.params.sitter_id;
-        if (!sitterId) {
-            return res.status(400).json({ message: "กรุณาระบุ Sitter ID" });
-        }
-
         const query = `
         SELECT 
-          b.booking_id,
-          b.member_id,
-          b.sitter_id,
-          b.pet_type_id,
-          b.pet_breed,
-          b.sitter_service_id,
-          b.start_date,
-          b.end_date,
-          b.status,
-          b.total_price,
-          b.payment_status,
-          b.created_at,
-          b.updated_at,
-          COALESCE(m.first_name, '') AS first_name,
-          COALESCE(m.last_name, '') AS last_name
-        FROM Bookings b
-        LEFT JOIN Members m ON b.member_id = m.member_id
-        WHERE b.sitter_id = ?
-        ORDER BY b.created_at DESC
-      `;
-        const result = await db.query(query, [sitterId]);
-        console.log("Fetched sitter jobs:", result);
-        return res.status(200).json({ jobs: result });
-    } catch (error) {
-        console.error("Error fetching sitter jobs:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Accept Job
- */
-exports.acceptJob = async (req, res) => {
-    try {
-        const { booking_id, sitter_id } = req.body;
-
-        if (!booking_id || !sitter_id) {
-            return res.status(400).json({ message: "กรุณาระบุ booking_id และ sitter_id" });
-        }
-
-        const updateQuery = `
-        UPDATE Bookings
-        SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP
-        WHERE booking_id = ? AND sitter_id = ? AND status != 'confirmed'
-        `;
-        const updateResult = await db.query(updateQuery, [booking_id, sitter_id]);
-
-        if (updateResult.affectedRows === 0) {
-            return res.status(400).json({ message: "งานนี้ถูกรับงานแล้ว หรือคุณไม่มีสิทธิ์รับงานนี้" });
-        }
-
-        const selectQuery = `SELECT * FROM Bookings WHERE booking_id = ?`;
-        const rows = await db.query(selectQuery, [booking_id]);
-
-        return res.status(200).json({
-            message: "รับงานเรียบร้อยแล้ว",
-            job: rows[0]
-        });
-    } catch (error) {
-        console.error("Accept Job error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Get Income Stats
- */
-exports.getIncomeStats = async (req, res) => {
-    try {
-        const sitterId = req.params.sitter_id;
-        if (!sitterId) {
-            return res.status(400).json({ message: "กรุณาระบุ Sitter ID" });
-        }
-
-        const query = `
-        SELECT 
-          bs.sitter_service_id,
-          st.short_name,
-          CAST(SUM(bs.total_price) AS DECIMAL(10,2)) AS total_income,
-          COUNT(*) AS job_count
-        FROM Bookings bs
-        LEFT JOIN Service_Types st ON bs.sitter_service_id = st.service_type_id
-        WHERE bs.sitter_id = ?
-          AND bs.status = 'confirmed'
-          AND bs.payment_status = 'paid'
-        GROUP BY bs.sitter_service_id, st.short_name
-        ORDER BY total_income DESC
-      `;
-        const result = await db.query(query, [sitterId]);
-        return res.status(200).json({ incomeStats: result });
-    } catch (error) {
-        console.error("Error fetching income stats:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Get Pie Income Stats
- */
-exports.getPieIncomeStats = async (req, res) => {
-    try {
-        const sitterId = req.params.sitter_id;
-        if (!sitterId) {
-            return res.status(400).json({ message: "กรุณาระบุ Sitter ID" });
-        }
-
-        const statsQuery = `
-        SELECT 
-          COUNT(*) AS jobs_completed,
-          CAST(COALESCE(SUM(total_price), 0) AS DECIMAL(10,2)) AS total_income
-        FROM Bookings
-        WHERE sitter_id = ?
-          AND status = 'confirmed'
-          AND payment_status = 'paid'
-      `;
-        const statsResult = await db.query(statsQuery, [sitterId]);
-        const statsRow = statsResult[0];
-        const stats = {
-            jobsCompleted: statsRow.jobs_completed.toString(),
-            totalIncome: statsRow.total_income.toString()
-        };
-
-        const breakdownQuery = `
-        SELECT 
-          ss.sitter_service_id,
-          ss.description,
-          st.service_type_id,
-          COALESCE(st.short_name, 'N/A') AS short_name,
-          CAST(COALESCE(SUM(bs.total_price), 0) AS DECIMAL(10,2)) AS total_income,
-          COUNT(*) AS job_count
-        FROM Bookings bs
-        JOIN Sitter_Services ss ON bs.sitter_service_id = ss.sitter_service_id
-        LEFT JOIN Service_Types st ON ss.service_type_id = st.service_type_id
-        WHERE bs.sitter_id = ?
-          AND bs.status = 'confirmed'
-          AND bs.payment_status = 'paid'
-        GROUP BY ss.sitter_service_id, st.service_type_id, st.short_name, ss.description
-        ORDER BY total_income DESC
-      `;
-        const breakdownResult = await db.query(breakdownQuery, [sitterId]);
-        const incomeStats = breakdownResult.map(row => ({
-            sitter_service_id: row.sitter_service_id,
-            service_type_id: row.service_type_id,
-            short_name: row.short_name,
-            description: row.description,
-            total_income: row.total_income.toString(),
-            job_count: row.job_count.toString()
-        }));
-
-        return res.status(200).json({ stats, incomeStats });
-    } catch (error) {
-        console.error("Error fetching pie income stats:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Add Payment Method
- */
-exports.addPaymentMethod = async (req, res) => {
-    try {
-        const { sitter_id, promptpay_number } = req.body;
-        if (!sitter_id || !promptpay_number) {
-            return res.status(400).json({ message: "กรุณาระบุข้อมูลที่จำเป็นให้ครบ" });
-        }
-
-        const insertQuery = `
-        INSERT INTO Payment_Methods (sitter_id, promptpay_number, created_at, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      `;
-        const insertResult = await db.query(insertQuery, [sitter_id, promptpay_number]);
-        const insertedId = insertResult.insertId;
-        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
-        const rows = await db.query(selectQuery, [insertedId]);
-
-        return res.status(200).json({
-            message: "เพิ่มวิธีการชำระเงินเรียบร้อยแล้ว",
-            paymentMethod: rows[0]
-        });
-    } catch (error) {
-        console.error("Add Payment Method error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Update Payment Method
- */
-exports.updatePaymentMethod = async (req, res) => {
-    try {
-        const { payment_method_id, promptpay_number } = req.body;
-        if (!payment_method_id || !promptpay_number) {
-            return res.status(400).json({ message: "กรุณาระบุข้อมูลที่ต้องการแก้ไขให้ครบ" });
-        }
-
-        const updateQuery = `
-        UPDATE Payment_Methods
-        SET promptpay_number = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE payment_method_id = ?
-        `;
-        const updateResult = await db.query(updateQuery, [promptpay_number, payment_method_id]);
-        if (updateResult.affectedRows === 0) {
-            return res.status(404).json({ message: "ไม่พบวิธีการชำระเงินที่ต้องการแก้ไข" });
-        }
-        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
-        const rows = await db.query(selectQuery, [payment_method_id]);
-
-        return res.status(200).json({
-            message: "แก้ไขวิธีการชำระเงินเรียบร้อยแล้ว",
-            paymentMethod: rows[0]
-        });
-    } catch (error) {
-        console.error("Update Payment Method error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Delete Payment Method
- */
-exports.deletePaymentMethod = async (req, res) => {
-    try {
-        const { payment_method_id } = req.params;
-        if (!payment_method_id) {
-            return res.status(400).json({ message: "กรุณาระบุรหัสวิธีการชำระเงินที่ต้องการลบ" });
-        }
-
-        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
-        const rows = await db.query(selectQuery, [payment_method_id]);
-        if (rows.length === 0) {
-            return res.status(404).json({ message: "ไม่พบวิธีการชำระเงินที่ต้องการลบ" });
-        }
-        const deletedPaymentMethod = rows[0];
-
-        const deleteQuery = `DELETE FROM Payment_Methods WHERE payment_method_id = ?`;
-        await db.query(deleteQuery, [payment_method_id]);
-
-        return res.status(200).json({
-            message: "ลบวิธีการชำระเงินเรียบร้อยแล้ว",
-            paymentMethod: deletedPaymentMethod
-        });
-    } catch (error) {
-        console.error("Delete Payment Method error:", error);
-        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
-    }
-};
-
-/**
- * Get Payment Methods
- */
-exports.getPaymentMethods = async (req, res) => {
-    try {
-        const { sitter_id } = req.params;
-        if (!sitter_id) {
-            return res.status(400).json({ message: "กรุณาระบุ Sitter ID" });
-        }
-
-        const query = `
-        SELECT 
-          payment_method_id,
-          sitter_id,
-          promptpay_number,
+          pet_type_id,
+          type_name,
+          description,
           created_at,
           updated_at
-        FROM Payment_Methods
-        WHERE sitter_id = ?
-        ORDER BY created_at DESC
+        FROM Pet_Types
+        ORDER BY pet_type_id ASC
       `;
-        const result = await db.query(query, [sitter_id]);
-        return res.status(200).json({ paymentMethods: result });
+        const result = await db.query(query);
+        return res.status(200).json({ petTypes: result });
     } catch (error) {
-        console.error("Error fetching payment methods:", error);
+        console.error("Error fetching pet types for sitter:", error);
         return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
     }
 };
@@ -1670,7 +826,6 @@ exports.cancelJob = async (req, res) => {
             return res.status(400).json({ message: "กรุณาระบุ booking_id และ sitter_id" });
         }
 
-        // ตรวจสอบว่างานนี้ยังไม่ถูกรับหรือยกเลิกอยู่แล้ว
         const checkQuery = `SELECT status FROM Bookings WHERE booking_id = ? AND sitter_id = ?`;
         const checkResult = await db.query(checkQuery, [booking_id, sitter_id]);
         if (checkResult.length === 0) {
@@ -1681,7 +836,6 @@ exports.cancelJob = async (req, res) => {
             return res.status(400).json({ message: "งานนี้ไม่สามารถยกเลิกได้" });
         }
 
-        // อัปเดตสถานะงานเป็น 'cancelled'
         const updateQuery = `
             UPDATE Bookings
             SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
@@ -1693,7 +847,6 @@ exports.cancelJob = async (req, res) => {
             return res.status(400).json({ message: "ไม่สามารถยกเลิกงานได้" });
         }
 
-        // ดึงข้อมูลงานที่ถูกอัปเดตกลับมา
         const selectQuery = `SELECT * FROM Bookings WHERE booking_id = ?`;
         const rows = await db.query(selectQuery, [booking_id]);
 
@@ -1703,6 +856,197 @@ exports.cancelJob = async (req, res) => {
         });
     } catch (error) {
         console.error("Cancel Job error:", error);
+        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+    }
+};
+
+/* Payment Methods APIs */
+
+/**
+ * Add Payment Method
+ */
+exports.addPaymentMethod = async (req, res) => {
+    try {
+        const { sitter_id, promptpay_number } = req.body;
+        if (!sitter_id || !promptpay_number) {
+            return res.status(400).json({ message: "กรุณาระบุข้อมูลที่จำเป็นให้ครบ" });
+        }
+
+        const insertQuery = `
+        INSERT INTO Payment_Methods (sitter_id, promptpay_number, created_at, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `;
+        const insertResult = await db.query(insertQuery, [sitter_id, promptpay_number]);
+        const insertedId = insertResult.insertId;
+        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
+        const rows = await db.query(selectQuery, [insertedId]);
+
+        return res.status(200).json({
+            message: "เพิ่มวิธีการชำระเงินเรียบร้อยแล้ว",
+            paymentMethod: rows[0]
+        });
+    } catch (error) {
+        console.error("Add Payment Method error:", error);
+        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+    }
+};
+
+/**
+ * Update Payment Method
+ */
+exports.updatePaymentMethod = async (req, res) => {
+    try {
+        const { payment_method_id, promptpay_number } = req.body;
+        if (!payment_method_id || !promptpay_number) {
+            return res.status(400).json({ message: "กรุณาระบุข้อมูลที่ต้องการแก้ไขให้ครบ" });
+        }
+
+        const updateQuery = `
+        UPDATE Payment_Methods
+        SET promptpay_number = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE payment_method_id = ?
+        `;
+        const updateResult = await db.query(updateQuery, [promptpay_number, payment_method_id]);
+        if (updateResult.affectedRows === 0) {
+            return res.status(404).json({ message: "ไม่พบวิธีการชำระเงินที่ต้องการแก้ไข" });
+        }
+        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
+        const rows = await db.query(selectQuery, [payment_method_id]);
+
+        return res.status(200).json({
+            message: "แก้ไขวิธีการชำระเงินเรียบร้อยแล้ว",
+            paymentMethod: rows[0]
+        });
+    } catch (error) {
+        console.error("Update Payment Method error:", error);
+        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+    }
+};
+
+/**
+ * Delete Payment Method
+ */
+exports.deletePaymentMethod = async (req, res) => {
+    try {
+        const { payment_method_id } = req.params;
+        if (!payment_method_id) {
+            return res.status(400).json({ message: "กรุณาระบุรหัสวิธีการชำระเงินที่ต้องการลบ" });
+        }
+
+        const selectQuery = `SELECT * FROM Payment_Methods WHERE payment_method_id = ?`;
+        const rows = await db.query(selectQuery, [payment_method_id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: "ไม่พบวิธีการชำระเงินที่ต้องการลบ" });
+        }
+        const deletedPaymentMethod = rows[0];
+
+        const deleteQuery = `DELETE FROM Payment_Methods WHERE payment_method_id = ?`;
+        await db.query(deleteQuery, [payment_method_id]);
+
+        return res.status(200).json({
+            message: "ลบวิธีการชำระเงินเรียบร้อยแล้ว",
+            paymentMethod: deletedPaymentMethod
+        });
+    } catch (error) {
+        console.error("Delete Payment Method error:", error);
+        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+    }
+};
+
+/**
+ * Get Payment Methods
+ */
+exports.getPaymentMethods = async (req, res) => {
+    try {
+        const { sitter_id } = req.params;
+        if (!sitter_id) {
+            return res.status(400).json({ message: "กรุณาระบุ Sitter ID" });
+        }
+
+        const query = `
+        SELECT 
+          payment_method_id,
+          sitter_id,
+          promptpay_number,
+          created_at,
+          updated_at
+        FROM Payment_Methods
+        WHERE sitter_id = ?
+        ORDER BY created_at DESC
+      `;
+        const result = await db.query(query, [sitter_id]);
+        return res.status(200).json({ paymentMethods: result });
+    } catch (error) {
+        console.error("Error fetching payment methods:", error);
+        return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+    }
+};
+
+// ในไฟล์ controllers/sitterController.js
+exports.getSitterServices = async (req, res) => {
+    try {
+        const { sitter_id } = req.params;
+        if (!sitter_id) {
+            return res.status(400).json({ message: "กรุณาระบุ Sitter ID" });
+        }
+        const query = `
+        SELECT 
+          sitter_service_id,
+          sitter_id,
+          service_type_id,
+          pet_type_id,
+          price,
+          pricing_unit,
+          duration,
+          description,
+          service_image,
+          created_at,
+          updated_at
+        FROM Sitter_Services
+        WHERE sitter_id = ?
+        ORDER BY created_at DESC
+      `;
+        const services = await db.query(query, [sitter_id]);
+        return res.status(200).json({ services });
+    } catch (error) {
+        console.error("Error fetching sitter services:", error);
+        return res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+exports.deleteOwnService = async (req, res) => {
+    try {
+        const { sitter_service_id } = req.params;
+        const { sitter_id } = req.body; // ตรวจสอบว่า requester คือเจ้าของบริการ
+
+        if (!sitter_service_id || !sitter_id) {
+            return res.status(400).json({ message: "กรุณาระบุรหัสงานและ sitter_id" });
+        }
+
+        // ตรวจสอบว่าบริการที่ต้องการลบนั้นมีอยู่และเป็นของพี่เลี้ยงที่ร้องขอ
+        const selectQuery = `SELECT * FROM Sitter_Services WHERE sitter_service_id = ?`;
+        const rows = await db.query(selectQuery, [sitter_service_id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: "ไม่พบงานที่ต้องการลบ" });
+        }
+        const service = rows[0];
+
+        // ตรวจสอบความเป็นเจ้าของ (เปรียบเทียบ sitter_id ใน service กับ sitter_id ที่ส่งมา)
+        if (parseInt(service.sitter_id) !== parseInt(sitter_id)) {
+            return res.status(403).json({ message: "คุณไม่มีสิทธิ์ลบบริการนี้" });
+        }
+
+        // ดำเนินการลบบริการ
+        const deleteQuery = `DELETE FROM Sitter_Services WHERE sitter_service_id = ?`;
+        await db.query(deleteQuery, [sitter_service_id]);
+
+        return res.status(200).json({
+            message: "ลบบริการเรียบร้อยแล้ว",
+            service
+        });
+    } catch (error) {
+        console.error("Delete Own Service error:", error);
         return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
     }
 };
