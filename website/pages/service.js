@@ -23,7 +23,7 @@ export default function Service() {
   const fetchServiceTypes = useCallback(() => {
     setLoading(true);
     axios
-      .get("http://192.168.1.8:5000/api/admin/service-types")
+      .get("http://192.168.1.12:5000/api/admin/service-types")
       .then((response) => {
         setServiceTypes(response.data.serviceTypes || []);
         setLoading(false);
@@ -73,7 +73,7 @@ export default function Service() {
     try {
       if (modalMode === "add") {
         const response = await axios.post(
-          "http://192.168.1.8:5000/api/admin/service-types",
+          "http://192.168.1.12:5000/api/admin/service-types",
           {
             short_name: formData.short_name,
             full_description: formData.full_description,
@@ -82,7 +82,7 @@ export default function Service() {
         swal("Success", response.data.message, "success");
       } else if (modalMode === "edit") {
         const response = await axios.put(
-          "http://192.168.1.8:5000/api/admin/service-types",
+          "http://192.168.1.12:5000/api/admin/service-types",
           {
             service_type_id: formData.service_type_id,
             short_name: formData.short_name,
@@ -113,7 +113,7 @@ export default function Service() {
     if (confirm("Are you sure you want to delete this service type?")) {
       try {
         const response = await axios.delete(
-          `http://192.168.1.8:5000/api/admin/service-types/${service_type_id}`
+          `http://192.168.1.12:5000/api/admin/service-types/${service_type_id}`
         );
         swal("Success", response.data.message, "success");
         fetchServiceTypes();
