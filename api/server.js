@@ -3,12 +3,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 
 // ตั้งค่า Firebase Admin ก่อน import routes ที่ใช้ Firebase
-const admin = require('firebase-admin');
-const serviceAccount = require('./firebase.json');
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'your-actual-bucket-name.appspot.com' // เปลี่ยนเป็น bucket name ที่ถูกต้อง
-});
+
 
 const app = express();
 
