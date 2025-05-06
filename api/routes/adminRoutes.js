@@ -36,4 +36,5 @@ router.put('/booking-slips', adminController.updateBookingSlipStatus);
 router.delete('/booking-slips/:booking_id', adminController.deleteBookingSlip);
 router.get('/get-image/:filename', adminController.getImage);
 
+router.get('/admin/job-submissions/:booking_id', adminController.getJobSubmissions);
 module.exports = router;

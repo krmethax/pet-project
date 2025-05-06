@@ -49,7 +49,7 @@ export default function Home() {
   // ดึงข้อมูลพี่เลี้ยงจาก API (รวมสถิติ)
   const fetchUser = useCallback(() => {
     if (sitterId) {
-      fetch(`http://192.168.1.8:5000/api/sitter/sitter/${sitterId}`)
+      fetch(`http://192.168.1.12:5000/api/sitter/sitter/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();
@@ -75,7 +75,7 @@ export default function Home() {
   // ดึงข้อมูลรายได้และงานที่รับไปแล้วจาก API
   const fetchIncomeStats = useCallback(() => {
     if (sitterId) {
-      fetch(`http://192.168.1.8:5000/api/sitter/sitter/income-stats/${sitterId}`)
+      fetch(`http://192.168.1.12:5000/api/sitter/sitter/income-stats/${sitterId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();

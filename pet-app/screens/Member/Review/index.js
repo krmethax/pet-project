@@ -1,3 +1,4 @@
+// Review.js
 import React, { useState } from 'react';
 import { 
   Text, 
@@ -15,25 +16,20 @@ import { AntDesign } from '@expo/vector-icons';
 export default function Review() {
   const navigation = useNavigation();
   const route = useRoute();
-  // รับค่า bookingId, memberId, sitterId และ jobDetails จาก route.params
   const { bookingId, memberId, sitterId, jobDetails } = route.params;
-  console.log('Route params:', route.params);
 
-  // กำหนด jobTitle และ jobDescription จาก jobDetails
-  const jobTitle = jobDetails ? jobDetails.description : '';
-  // ในที่นี้ใช้ราคาเป็นข้อมูลเพิ่มเติมใน jobDescription
-  const jobDescription = jobDetails ? `ราคา: ${jobDetails.price} บาท` : '';
+  // derive title/description
+  const jobTitle       = jobDetails?.description || '';
+  const jobDescription = jobDetails 
+    ? `ราคา: ${jobDetails.price} บาท` 
+    : '';
 
-  const [rating, setRating] = useState(0); // คะแนน (1-5)
+  const [rating, setRating] = useState(0);
   const [reviewText, setReviewText] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleStarPress = (star) => {
-    if (rating === star) {
-      setRating(star - 1);
-    } else {
-      setRating(star);
-    }
+    setRating(rating === star ? star - 1 : star);
   };
   
   const handleSubmitReview = async () => {
@@ -43,13 +39,13 @@ export default function Review() {
     }
     setLoading(true);
     try {
-      const response = await fetch('http://192.168.1.8:5000/api/auth/review', {
+      const response = await fetch('http://192.168.1.12:5000/api/auth/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          booking_id: bookingId,
-          member_id: memberId,
-          sitter_id: sitterId,
+          booking_id:  bookingId,
+          member_id:   memberId,
+          sitter_id:   sitterId,
           rating,
           review_text: reviewText,
         }),
@@ -59,7 +55,10 @@ export default function Review() {
         Alert.alert('เกิดข้อผิดพลาด', data.message || 'ไม่สามารถส่งรีวิวได้');
       } else {
         Alert.alert('สำเร็จ', data.message, [
-          { text: 'ตกลง', onPress: () => navigation.goBack() },
+          { text: 'ตกลง', onPress: () => {
+              navigation.goBack();
+            }
+          },
         ]);
       }
     } catch (error) {
@@ -70,7 +69,7 @@ export default function Review() {
   };
 
   const renderStars = () => {
-    let stars = [];
+    const stars = [];
     for (let i = 1; i <= 5; i++) {
       stars.push(
         <TouchableOpacity key={i} onPress={() => handleStarPress(i)}>
@@ -89,7 +88,7 @@ export default function Review() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      {/* Header */}
+
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <AntDesign name="arrowleft" size={24} />
@@ -97,20 +96,17 @@ export default function Review() {
         <Text style={styles.headerTitle}>รีวิว</Text>
       </View>
 
-      {/* ส่วนแสดงรายละเอียดงาน (Job Details) */}
       {jobDetails && (
         <View style={styles.jobContainer}>
           <Text style={styles.jobTitle}>{jobTitle}</Text>
           {jobDescription !== '' && (
             <Text style={styles.jobDescription}>{jobDescription}</Text>
           )}
-          {/* แสดง short_name ถ้ามี โดยจะแสดงข้อความ "Service Type:" ตามด้วยค่า */}
           {jobDetails.short_name && (
             <Text style={styles.jobDescription}>
               Service Type: {jobDetails.short_name}
             </Text>
           )}
-          {/* สามารถเพิ่มรายละเอียดเพิ่มเติมจาก jobDetails ได้ที่นี่ */}
         </View>
       )}
 

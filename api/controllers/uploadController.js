@@ -227,5 +227,6 @@ exports.uploadPaymentSlip = async (req, res) => {
   }
 };
 
+
 // Export multer middleware สำหรับรับไฟล์ (field "image")
 exports.uploadMiddleware = upload.single('image');

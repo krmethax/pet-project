@@ -56,7 +56,7 @@ export default function ProfileSitter() {
 
   // ดึงข้อมูลโปรไฟล์พี่เลี้ยง
   const fetchProfile = useCallback(() => {
-    fetch(`http://192.168.1.8:5000/api/auth/sitter/${sitter_id}`)
+    fetch(`http://192.168.1.12:5000/api/auth/sitter/${sitter_id}`)
       .then((response) => response.json())
       .then((data) => {
         if (data.sitter) {
@@ -70,7 +70,7 @@ export default function ProfileSitter() {
 
   // ดึงข้อมูลงานของพี่เลี้ยง
   const fetchJobs = useCallback(() => {
-    fetch("http://192.168.1.8:5000/api/auth/sitter-services")
+    fetch("http://192.168.1.12:5000/api/auth/sitter-services")
       .then((response) => response.json())
       .then((data) => {
         if (data.services) {
@@ -85,7 +85,7 @@ export default function ProfileSitter() {
 
   // ดึงข้อมูลประเภทบริการ
   useEffect(() => {
-    fetch("http://192.168.1.8:5000/api/auth/service-type")
+    fetch("http://192.168.1.12:5000/api/auth/service-type")
       .then((response) => response.json())
       .then((data) => {
         if (data.serviceTypes) {
@@ -101,7 +101,7 @@ export default function ProfileSitter() {
 
   // ดึงข้อมูลประเภทสัตว์เลี้ยง
   useEffect(() => {
-    fetch("http://192.168.1.8:5000/api/auth/pet-categories")
+    fetch("http://192.168.1.12:5000/api/auth/pet-categories")
       .then((response) => response.json())
       .then((data) => {
         if (data.petCategories) {
@@ -118,7 +118,7 @@ export default function ProfileSitter() {
     if (!memberId) return;
     try {
       const response = await fetch(
-        `http://192.168.1.8:5000/api/auth/favorite/${memberId}`
+        `http://192.168.1.12:5000/api/auth/favorite/${memberId}`
       );
       const data = await response.json();
       if (response.ok && data.favorites) {
@@ -135,7 +135,7 @@ export default function ProfileSitter() {
   // ดึงค่าเฉลี่ย rating จาก API Reviews ของพี่เลี้ยง
   useEffect(() => {
     if (sitter_id) {
-      fetch(`http://192.168.1.8:5000/api/auth/reviews/sitter/${sitter_id}`)
+      fetch(`http://192.168.1.12:5000/api/auth/reviews/sitter/${sitter_id}`)
         .then((response) => response.json())
         .then((data) => {
           if (data.averageRating !== undefined) {
@@ -168,7 +168,7 @@ export default function ProfileSitter() {
   const addFavorite = async () => {
     if (!memberId) return;
     try {
-      const response = await fetch("http://192.168.1.8:5000/api/auth/favorite", {
+      const response = await fetch("http://192.168.1.12:5000/api/auth/favorite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ member_id: memberId, sitter_id }),
@@ -190,7 +190,7 @@ export default function ProfileSitter() {
     if (!memberId) return;
     try {
       const response = await fetch(
-        `http://192.168.1.8:5000/api/auth/favorite/${memberId}/${sitter_id}`,
+        `http://192.168.1.12:5000/api/auth/favorite/${memberId}/${sitter_id}`,
         { method: "DELETE" }
       );
       const data = await response.json();
@@ -314,8 +314,8 @@ export default function ProfileSitter() {
                   style={[
                     styles.jobCard,
                     selectedJob &&
-                      selectedJob.sitter_service_id === jobItem.sitter_service_id &&
-                      styles.jobCardSelected,
+                    selectedJob.sitter_service_id === jobItem.sitter_service_id &&
+                    styles.jobCardSelected,
                   ]}
                   onPress={() =>
                     setSelectedJob((prev) =>
@@ -326,14 +326,15 @@ export default function ProfileSitter() {
                   }
                 >
                   <Text style={styles.jobTitle}>
-                    {getServiceTypeShortName(jobItem.service_type_id)}
+                    ชื่องาน: {jobItem.job_name}
                   </Text>
-                  {/* แสดงชื่อประเภทสัตว์เลี้ยงแทน id */}
+                  {/* Display service type short name */}
                   <Text style={styles.jobPetType}>
-                    ประเภทสัตว์เลี้ยง: {getPetCategoryName(jobItem.pet_type_id)}
+                    ประเภทบริการ: {getServiceTypeShortName(jobItem.service_type_id)}
                   </Text>
+                  {/* Display pet category name */}
                   <Text style={styles.jobDescription}>
-                    {jobItem.description || "ไม่มีรายละเอียด"}
+                    ประเภทสัตว์เลี้ยง: {getPetCategoryName(jobItem.pet_type_id)}
                   </Text>
                   <Text style={styles.jobPrice}>{jobItem.price} บาท</Text>
                 </TouchableOpacity>
@@ -343,6 +344,7 @@ export default function ProfileSitter() {
             )}
           </>
         ) : (
+          // Other tab content (about sitter)
           <>
             <View style={styles.aboutContainer}>
               <MaterialIcons name="email" size={20} color="#000" style={styles.aboutIcon} />
@@ -366,7 +368,6 @@ export default function ProfileSitter() {
           </>
         )}
       </ScrollView>
-
       {/* Footer Buttons */}
       <View style={styles.footer}>
         <TouchableOpacity

@@ -38,7 +38,7 @@ export default function Setting() {
   // ดึงข้อมูลผู้ใช้งานเมื่อได้ memberId
   useEffect(() => {
     if (memberId) {
-      fetch(`http://192.168.1.8:5000/api/auth/member/${memberId}`)
+      fetch(`http://192.168.1.12:5000/api/auth/member/${memberId}`)
         .then(async (response) => {
           if (!response.ok) {
             const text = await response.text();

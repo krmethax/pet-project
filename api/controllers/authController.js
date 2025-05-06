@@ -1,7 +1,7 @@
 const db = require('../db');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
-
+const moment = require('moment');
 /**
  * ฟังก์ชันสุ่ม OTP 6 หลัก
  */
@@ -309,20 +309,17 @@ exports.getPetCategories = async (req, res) => {
 exports.getSitterServicesForMember = async (req, res) => {
   try {
     const query = `
-      SELECT 
-        ss.sitter_service_id,
-        ss.sitter_id,
-        ss.service_type_id,
-        ss.pet_type_id,
-        ss.price,
-        ss.pricing_unit,
-        ss.duration,
-        ss.description,
-        ss.service_image,
-        ss.created_at,
-        ss.updated_at
-      FROM Sitter_Services ss
-      ORDER BY ss.created_at DESC
+      SELECT
+        sitter_service_id,
+        sitter_id,
+        service_type_id,
+        pet_type_id,
+        job_name,
+        price,
+        created_at,
+        updated_at
+      FROM Sitter_Services
+      ORDER BY created_at DESC
     `;
     const result = await db.query(query);
     return res.status(200).json({
@@ -426,20 +423,26 @@ exports.createBooking = async (req, res) => {
     member_id = null,
     sitter_id = null,
     pet_type_id = null,
-    pet_breed = "", // กำหนดค่า default เป็นค่าว่าง
     sitter_service_id = null,
     service_type_id,
-    start_date = null,
-    end_date = null,
-    total_price = null
+    start_time = null,
+    end_time = null,
+    total_price = null,
+    pet_quantity = 1
   } = req.body;
-  
+
+  // ตรวจสอบว่า service_type_id และ member_id ถูกส่งมาหรือไม่
   if (service_type_id === undefined) {
     return res.status(400).json({ message: "service_type_id จำเป็นต้องระบุ" });
   }
 
   if (!member_id) {
     return res.status(400).json({ message: "member_id จำเป็นต้องระบุ" });
+  }
+
+  // ตรวจสอบว่า start_time และ end_time ถูกส่งมาหรือไม่
+  if (!start_time || !end_time) {
+    return res.status(400).json({ message: "start_time และ end_time จำเป็นต้องระบุ" });
   }
 
   try {
@@ -457,26 +460,37 @@ exports.createBooking = async (req, res) => {
       return res.status(400).json({ message: "service_type_id ไม่ถูกต้อง หรือไม่มีอยู่ในระบบ" });
     }
 
+    // กำหนดค่า booking_date โดยใช้ start_time
+    const booking_date = moment(start_time).format("YYYY-MM-DD");
+
+    // คำสั่ง INSERT เข้าตาราง Bookings
     const insertQuery = `
       INSERT INTO Bookings (
-        member_id, sitter_id, pet_type_id, pet_breed, sitter_service_id, service_type_id, start_date, end_date, total_price
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        member_id, sitter_id, pet_type_id, sitter_service_id, service_type_id, booking_date, start_time, end_time, total_price, pet_quantity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const result = await db.query(insertQuery, [
       member_id,
       sitter_id,
       pet_type_id,
-      pet_breed, // ค่านี้จะไม่เป็น null เพราะเราใช้ค่าว่างเป็น default
       sitter_service_id,
       service_type_id,
-      start_date,
-      end_date,
-      total_price
+      booking_date, // กำหนดค่า booking_date
+      start_time,
+      end_time,
+      total_price,
+      pet_quantity, // Include pet_quantity here
     ]);
-    return res.status(200).json({ booking_id: result.insertId });
+
+    // ถ้าการ insert สำเร็จ จะส่ง booking_id กลับ
+    if (result.insertId) {
+      return res.status(200).json({ booking_id: result.insertId });
+    } else {
+      throw new Error("Error creating booking");
+    }
   } catch (err) {
     console.error("Error in createBooking:", err);
-    return res.status(500).json({ message: "Error creating booking" });
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการสร้างการจอง" });
   }
 };
 
@@ -485,21 +499,54 @@ exports.getBookingsForMember = async (req, res) => {
   const { member_id } = req.params;
   try {
     const query = `
-      SELECT 
-        booking_id, member_id, sitter_id, pet_type_id, pet_breed, sitter_service_id,
-        start_date, end_date, status, total_price, payment_status, slip_image, created_at, updated_at
-      FROM Bookings
-      WHERE member_id = ?
-      ORDER BY created_at DESC
+      SELECT
+        b.booking_id,
+        b.member_id,
+        CONCAT(m.first_name, ' ', m.last_name)      AS member_name,
+        b.sitter_id,
+        CONCAT(s.first_name, ' ', s.last_name)      AS sitter_name,
+        b.pet_type_id,
+        pt.type_name                               AS pet_type,
+        b.sitter_service_id,
+        ss.job_name                                AS service_job_name,
+        ss.price                                   AS service_price,
+        st.short_name                              AS service_type_short_name,
+        st.full_description                        AS service_type_description,
+        b.booking_date,
+        b.start_time,
+        b.end_time,
+        b.status,
+        b.agreement_status,
+        b.total_price,
+        b.payment_status,
+        b.pet_quantity,
+        b.slip_image,
+        b.created_at,
+        b.updated_at,
+        -- ตรวจสอบว่ามีรีวิวของ booking นี้หรือยัง
+        EXISTS(
+          SELECT 1 
+          FROM Reviews r 
+          WHERE r.booking_id = b.booking_id 
+            AND r.member_id = b.member_id
+        ) AS has_review
+      FROM Bookings b
+      LEFT JOIN Members       m  ON b.member_id         = m.member_id
+      LEFT JOIN Pet_Sitters   s  ON b.sitter_id         = s.sitter_id
+      LEFT JOIN Pet_Types     pt ON b.pet_type_id       = pt.pet_type_id
+      LEFT JOIN Sitter_Services ss ON b.sitter_service_id = ss.sitter_service_id
+      LEFT JOIN Service_Types  st ON ss.service_type_id  = st.service_type_id
+      WHERE b.member_id = ?
+      ORDER BY b.created_at DESC
     `;
-    const result = await db.query(query, [member_id]);
+    const bookings = await db.query(query, [member_id]);
     return res.status(200).json({
-      message: "ดึงข้อมูลการจองสำเร็จ",
-      bookings: result
+      message: 'ดึงข้อมูลการจองพร้อมรายละเอียดสำเร็จ',
+      bookings
     });
   } catch (error) {
-    console.error("Error fetching bookings for member:", error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+    console.error('Error fetching bookings for member:', error);
+    return res.status(500).json({ message: 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' });
   }
 };
 

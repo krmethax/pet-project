@@ -1,340 +1,304 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
-  Text,
   View,
+  Text,
   StyleSheet,
-  ScrollView,
   RefreshControl,
-  TouchableOpacity,
+  FlatList,
   Dimensions,
-  LayoutAnimation,
-  UIManager,
-  Platform,
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { AntDesign } from "@expo/vector-icons";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { AntDesign, Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-import { LinearGradient } from "expo-linear-gradient";
-import Svg, { G, Path, Text as SvgText } from "react-native-svg";
+import { PieChart } from "react-native-svg-charts";
+import { Defs, LinearGradient, Stop } from "react-native-svg";
+import { Picker } from "@react-native-picker/picker";
 
 const { width: screenWidth } = Dimensions.get("window");
 
-// เปิดใช้งาน LayoutAnimation สำหรับ Android
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-// ----- Utility functions for custom donut chart -----
-function polarToCartesian(cx, cy, radius, angleInDegrees) {
-  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
-  return {
-    x: cx + radius * Math.cos(angleInRadians),
-    y: cy + radius * Math.sin(angleInRadians),
-  };
-}
-
-function describeDonutSegment(cx, cy, outerRadius, innerRadius, startAngle, endAngle) {
-  const outerStart = polarToCartesian(cx, cy, outerRadius, startAngle);
-  const outerEnd = polarToCartesian(cx, cy, outerRadius, endAngle);
-  const innerStart = polarToCartesian(cx, cy, innerRadius, startAngle);
-  const innerEnd = polarToCartesian(cx, cy, innerRadius, endAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-  return [
-    "M", outerStart.x, outerStart.y,
-    "A", outerRadius, outerRadius, 0, largeArcFlag, 1, outerEnd.x, outerEnd.y,
-    "L", innerEnd.x, innerEnd.y,
-    "A", innerRadius, innerRadius, 0, largeArcFlag, 0, innerStart.x, innerStart.y,
-    "Z"
-  ].join(" ");
-}
-
-// ----- Custom DonutChart Component -----
-// เพิ่ม prop selectedIndex เพื่อให้ slice ที่เลือกมีการ offset (exploded effect)
-const DonutChart = ({ data, innerRadius, outerRadius, centerText, selectedIndex }) => {
-  const size = outerRadius * 2;
-  const cx = outerRadius;
-  const cy = outerRadius;
-  let startAngle = 0;
-  const slices = data.map((slice) => {
-    const sliceAngle = (slice.value / 100) * 360;
-    const endAngle = startAngle + sliceAngle;
-    const midAngle = startAngle + sliceAngle / 2;
-    const path = describeDonutSegment(cx, cy, outerRadius, innerRadius, startAngle, endAngle);
-    startAngle = endAngle;
-    return { path, color: slice.color, midAngle };
-  });
-
-  return (
-    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <G>
-        {slices.map((slice, index) => {
-          // หาก slice ตรงกับ selectedIndex ให้เพิ่ม offset เล็กน้อย (exploded effect)
-          let transform = "";
-          if (selectedIndex === index) {
-            const offset = 5; // ลด offset ลงเพื่อไม่ให้วงกลมบัง
-            const offsetX = offset * Math.cos((slice.midAngle - 90) * Math.PI / 180);
-            const offsetY = offset * Math.sin((slice.midAngle - 90) * Math.PI / 180);
-            transform = `translate(${offsetX}, ${offsetY})`;
-          }
-          return (
-            <G key={`slice-${index}`} transform={transform}>
-              <Path d={slice.path} fill={slice.color} />
-            </G>
-          );
-        })}
-        {centerText ? (
-          <SvgText
-            x={cx}
-            y={cy}
-            textAnchor="middle"
-            alignmentBaseline="middle"
-            fontSize={20}
-            fill="#000"
-          >
-            {centerText}
-          </SvgText>
-        ) : null}
-      </G>
-    </Svg>
-  );
-};
-
-// ----- Report Component -----
-export default function Report() {
+export default function ExpensesReport() {
   const navigation = useNavigation();
-  const route = useRoute();
-
-  // สมมติ API ส่งมาในรูปแบบ:
-  // {
-  //   "stats": { "jobsCompleted": "5", "totalIncome": "1000.00" },
-  //   "incomeStats": [
-  //     { "short_name": "บริการ A", "description": "รับฝากสัตว์เลี้ยงค้างคืน", "total_income": "400.00", "job_count": "2" },
-  //     { "short_name": "บริการ B", "description": "รับอาบน้ำ", "total_income": "300.00", "job_count": "1" },
-  //     { "short_name": "บริการ C", "description": "พาสัตว์เลี้ยงเดินเล่น", "total_income": "200.00", "job_count": "1" },
-  //     { "short_name": "บริการ D", "description": "รับอาบน้ำ", "total_income": "100.00", "job_count": "1" }
-  //   ]
-  // }
-  const { stats } = route.params || {};
-  const [incomeStats, setIncomeStats] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
-  const totalIncome = parseFloat(stats?.totalIncome) || 0;
+  const [stats, setStats] = useState({ jobsCompleted: "0", totalIncome: "0" });
+  const [incomeStats, setIncomeStats] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  const fetchIncomeStats = useCallback(async () => {
+  const months = [
+    "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+    "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
+  ];
+
+  const fetchData = useCallback(async () => {
+    setRefreshing(true);
     try {
-      let sitterId = route.params?.sitter_id;
-      if (!sitterId) {
-        sitterId = await AsyncStorage.getItem("sitter_id");
-      }
-      if (!sitterId) {
-        console.error("Sitter ID not found");
-        return;
-      }
-      const response = await fetch(`http://192.168.1.8:5000/api/sitter/sitter/income-stats/${sitterId}`);
-      if (!response.ok) {
-        const text = await response.text();
-        console.error("Income stats response status:", response.status);
-        console.error("Income stats response text:", text);
-        throw new Error("ไม่สามารถดึงข้อมูลรายได้ได้");
-      }
-      const data = await response.json();
-      setIncomeStats(data.incomeStats || []);
-    } catch (error) {
-      console.error("Error fetching income stats:", error);
+      const sitterId = await AsyncStorage.getItem("sitter_id");
+      if (!sitterId) throw new Error("No sitter_id");
+      const resp = await fetch(
+        `http://192.168.1.12:5000/api/sitter/sitter/income-stats/${sitterId}`
+      );
+      if (!resp.ok) throw new Error(await resp.text());
+      const { stats: apiStats, incomeStats: apiInc } = await resp.json();
+      setStats(apiStats);
+
+      // กรองตามเดือน/ปี
+      const filtered = apiInc.filter(x => {
+        const d = new Date(x.booking_date);
+        return (
+          d.getMonth() + 1 === selectedMonth &&
+          d.getFullYear() === selectedYear
+        );
+      });
+
+      setIncomeStats(filtered.map((x, i) => {
+        const bookingDate = new Date(x.booking_date);
+        // ตัดเวลาให้เหลือ ชั่วโมง:นาที
+        const start = x.start_time.slice(0,5);
+        const end = x.end_time.slice(0,5);
+        return {
+          key: String(i),
+          short_name: x.short_name,
+          amount: parseFloat(x.total_income),
+          date: bookingDate.toLocaleDateString("th-TH", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          }),
+          time: `${start} - ${end}`,
+        };
+      }));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRefreshing(false);
     }
-  }, [route.params?.sitter_id]);
+  }, [selectedMonth, selectedYear]);
 
   useEffect(() => {
-    if (stats) {
-      fetchIncomeStats();
+    fetchData();
+  }, [fetchData]);
+
+  // คำนวณยอดรวมเดือนที่เลือก
+  const total = incomeStats.reduce((sum, x) => sum + x.amount, 0);
+
+  // เตรียมข้อมูลสำหรับ Donut: ถ้ารายได้ >0 ใช้ gradient สีหลัก ถ้า =0 ใช้สีเทา
+  const chartData = [
+    {
+      key: "slice",
+      value: 1,
+      svg: { fill: total > 0 ? "url(#grad)" : "#eee" },
     }
-  }, [fetchIncomeStats, stats]);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchIncomeStats();
-    setRefreshing(false);
-  }, [fetchIncomeStats]);
-
-  // รวมรายได้ตามบริการ (group by short_name)
-  const groupedIncomeStats = incomeStats.reduce((acc, item) => {
-    const key = item.short_name;
-    if (!acc[key]) {
-      acc[key] = {
-        short_name: item.short_name,
-        total_income: parseFloat(item.total_income),
-        job_count: Number(item.job_count),
-        details: [item],
-      };
-    } else {
-      acc[key].total_income += parseFloat(item.total_income);
-      acc[key].job_count += Number(item.job_count);
-      acc[key].details.push(item);
-    }
-    return acc;
-  }, {});
-  const groupedArray = Object.values(groupedIncomeStats);
-
-  // เตรียมข้อมูลสำหรับ DonutChart (แยกบริการ)
-  const colorPalette = [
-    "#FF69B4",
-    "#33CC33",
-    "#6666CC",
-    "#CC3333",
-    "#CCCC33",
-    "#FF8C00",
-    "#20B2AA",
-    "#9370DB",
   ];
-  const breakdownData = groupedArray.map((item, index) => {
-    const percentage = totalIncome ? (item.total_income / totalIncome) * 100 : 0;
-    return { value: percentage, color: colorPalette[index % colorPalette.length] };
-  });
-  let sum = breakdownData.reduce((acc, slice) => acc + slice.value, 0);
-  if (sum < 100) {
-    breakdownData.push({ value: 100 - sum, color: "#E0E0E0" });
-  } else if (sum > 100) {
-    breakdownData.forEach((slice) => {
-      slice.value = (slice.value / sum) * 100;
-    });
-  }
 
-  // ปรับขนาด DonutChart: ลดขนาดเล็กลง
-  const radius = screenWidth * 0.2;
-  const innerRadius = radius * 0.6;
-  const centerText = `฿ ${totalIncome.toFixed(0)}`;
+  // ขนาด chart ครึ่งหน้าจอ
+  const chartSize = screenWidth * 0.5;
 
-  // สร้าง routes สำหรับ TabView จาก groupedArray (เก็บรายละเอียดงาน)
-  const routes = groupedArray.map((item, index) => ({
-    key: `${index}`,
-    title: item.short_name,
-    data: item.details,
-  }));
-
-  // state สำหรับ TabView: active tab (สำหรับ scene) และ exploded tab (สำหรับ effect)
-  const [activeTab, setActiveTab] = useState(0);
-  const [explodedTab, setExplodedTab] = useState(null);
-
-  // เมื่อกดแท็บ: ถ้าแท็บที่กดเท่ากับ explodedTab ให้ toggle กลับเป็น null (กลับมาปกติ)
-  const onTabPress = (index) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setActiveTab(index);
-    setExplodedTab((prev) => (prev === index ? null : index));
-  };
-
-  // renderScene สำหรับแต่ละ tab: แสดงรายการงานเป็น list
-  const renderScene = ({ route }) => {
-    return (
-      <View style={styles.sceneContainer}>
-        {route.data.map((job, idx) => (
-          <View key={idx} style={styles.jobItem}>
-            <View style={styles.jobLeft}>
-              <Text style={styles.jobTitle}>
-                {job.description || job.short_name}
-              </Text>
-            </View>
-            <Text style={styles.jobPrice}>
-              ฿ {parseFloat(job.total_income).toFixed(2)}
-            </Text>
-          </View>
-        ))}
+  const renderHeader = () => (
+    <View>
+      {/* Back + Title */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <AntDesign name="arrowleft" size={24} color="#333" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>รายงานรายได้</Text>
       </View>
-    );
-  };
 
-  // Custom Tab Bar แบบเลื่อนซ้ายขวา (เหมือน Instagram) ใช้ ScrollView แนวนอน
-  const renderTabBar = () => {
-    return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarContainer}>
-        {routes.map((route, index) => (
-          <TouchableOpacity key={route.key} style={styles.tabItemWrapper} onPress={() => onTabPress(index)}>
-            <Text style={[styles.tabLabel, activeTab === index && styles.tabLabelActive]}>
-              {route.title}
-            </Text>
-            {activeTab === index && <View style={styles.tabIndicator} />}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    );
-  };
+      {/* Donut Chart */}
+      <View style={[styles.chartWrapper, { width: chartSize, height: chartSize }]}> 
+        <PieChart
+          style={{ width: chartSize, height: chartSize }}
+          data={chartData}
+          outerRadius={"95%"}
+          innerRadius={"65%"}
+          padAngle={0}
+        >
+          <Defs>
+            <LinearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <Stop offset="0%" stopColor="#8E2DE2" />
+              <Stop offset="100%" stopColor="#4A00E0" />
+            </LinearGradient>
+          </Defs>
+        </PieChart>
+        <View style={[styles.centerLabel, { width: chartSize, height: chartSize }]}> 
+          <Text style={styles.centerLabelText}>฿</Text>
+          <Text style={styles.centerLabelAmount}>{total.toFixed(0)}</Text>
+        </View>
+      </View>
+
+      {/* Dropdowns ใต้กราฟ */}
+      <View style={styles.pickerRow}>
+        <Picker
+          selectedValue={selectedMonth}
+          style={styles.picker}
+          onValueChange={setSelectedMonth}
+        >
+          {months.map((m, i) => (
+            <Picker.Item key={i} label={m} value={i + 1} />
+          ))}
+        </Picker>
+        <Picker
+          selectedValue={selectedYear}
+          style={styles.picker}
+          onValueChange={setSelectedYear}
+        >
+          {Array.from({ length: 5 }, (_, i) => {
+            const y = new Date().getFullYear() - i;
+            return <Picker.Item key={y} label={`${y}`} value={y} />;
+          })}
+        </Picker>
+      </View>
+
+      {/* ถ้าไม่มีงาน */}
+      {incomeStats.length === 0 && (
+        <Text style={styles.noJobsText}>ไม่พบงานในเดือนที่เลือก</Text>
+      )}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
-      {/* Header พร้อมปุ่มย้อนกลับ */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <AntDesign name="arrowleft" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>รายงานรายได้</Text>
-      </View>
-      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-        {/* ข้อมูลพื้นฐาน */}
-        <View style={styles.infoContainer}>
-          <Text style={styles.infoText}>
-            รับงานไปแล้ว: {stats?.jobsCompleted || 0} | รายได้รวม: ฿ {totalIncome.toFixed(0)}
-          </Text>
-        </View>
-        {/* Donut Chart */}
-        <View style={styles.chartContainer}>
-          <TouchableOpacity>
-            <DonutChart
-              data={breakdownData}
-              innerRadius={innerRadius}
-              outerRadius={radius}
-              centerText={centerText}
-              selectedIndex={explodedTab} // ส่ง explodedTab เพื่อให้ slice ที่เลือกมี effect
-            />
-          </TouchableOpacity>
-        </View>
-        {/* Custom TabView */}
-        {routes.length > 0 && (
-          <View style={styles.tabContainer}>
-            {renderTabBar()}
-            <View style={styles.sceneWrapper}>{renderScene({ route: routes[activeTab] })}</View>
+      <FlatList
+        data={incomeStats}
+        keyExtractor={item => item.key}
+        ListHeaderComponent={renderHeader}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} />}
+        renderItem={({ item }) => (
+          <View style={styles.listItem}>
+            <View style={styles.listText}>
+              {/* ชื่องาน */}
+              <Text style={styles.listDesc}>{item.short_name}</Text>
+              {/* วันที่ */}
+              <View style={styles.row}>
+                <Ionicons name="calendar-outline" size={16} color="#777" style={styles.icon} />
+                <Text style={styles.listDate}>{item.date}</Text>
+              </View>
+              {/* เวลา */}
+              <View style={styles.row}>
+                <Ionicons name="time-outline" size={16} color="#777" style={styles.icon} />
+                <Text style={styles.listTime}>{item.time}</Text>
+              </View>
+            </View>
+            <Text
+              style={[
+                styles.listAmount,
+                item.amount >= 0 ? styles.amountPlus : styles.amountMinus,
+              ]}
+            >
+              ฿{Math.abs(item.amount).toFixed(2)}
+            </Text>
           </View>
         )}
-      </ScrollView>
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        contentContainerStyle={styles.listContainer}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
-  content: { paddingBottom: 40, alignItems: "center" },
+  listContainer: { padding: 16 },
+
   header: {
-    width: "100%",
-    backgroundColor: "#fff",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
+    borderBottomColor: "#eee",
+    marginBottom: 24,
   },
-  backButton: { paddingRight: 10 },
-  headerTitle: { fontSize: 18, fontFamily: "Prompt-Medium", color: "#000" },
-  infoContainer: { marginTop: 20, marginBottom: 20 },
-  infoText: { fontSize: 16, fontFamily: "Prompt-Regular", color: "#333" },
-  chartContainer: { alignItems: "center", justifyContent: "center", marginBottom: 20 },
-  tabContainer: { width: "90%", marginBottom: 20 },
-  tabBarContainer: { flexDirection: "row", paddingHorizontal: 10 },
-  tabItemWrapper: { alignItems: "center", marginRight: 20 },
-  tabLabel: { fontFamily: "Prompt-Regular", fontSize: 14, color: "#333" },
-  tabLabelActive: { fontFamily: "Prompt-Bold", color: "#FF69B4" },
-  tabIndicator: { marginTop: 4, height: 2, width: "100%", backgroundColor: "#FF69B4" },
-  sceneWrapper: { padding: 10, backgroundColor: "#fff", borderRadius: 10, marginTop: 20 },
-  sceneContainer: { width: "100%", padding: 10 },
-  jobItem: {
+  headerTitle: {
+    fontSize: 20,
+    fontFamily: "Prompt-Medium",
+    color: "#333",
+    marginLeft: 8,
+  },
+
+  chartWrapper: {
+    alignSelf: "center",
+    marginBottom: 24,
+  },
+  centerLabel: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  centerLabelText: {
+    fontSize: 18,
+    fontFamily: "Prompt-Regular",
+    color: "#999",
+  },
+  centerLabelAmount: {
+    fontSize: 24,
+    fontFamily: "Prompt-Bold",
+    color: "#333",
+  },
+
+  pickerRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
-    paddingVertical: 8,
+    justifyContent: "center",
+    marginBottom: 24,
   },
-  jobLeft: { flex: 1 },
-  jobTitle: { fontSize: 14, fontFamily: "Prompt-Regular", color: "#333" },
-  jobPrice: { fontSize: 14, fontFamily: "Prompt-Bold", color: "#FF69B4" },
+  picker: {
+    width: 140,
+    height: 50,
+    marginHorizontal: 8,
+    fontFamily: "Prompt-Regular",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 5,
+    backgroundColor: "#fafafa",
+  },
+
+  noJobsText: {
+    textAlign: "center",
+    color: "#999",
+    fontFamily: "Prompt-Regular",
+    marginBottom: 24,
+  },
+
+  listItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    paddingVertical: 12,
+  },
+  listText: { flex: 1 },
+  listDesc: {
+    fontSize: 16,
+    fontFamily: "Prompt-Medium",
+    color: "#333",
+    marginBottom: 4,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  icon: {
+    marginRight: 6,
+  },
+  listDate: {
+    fontSize: 14,
+    fontFamily: "Prompt-Regular",
+    color: "#333",
+  },
+  listTime: {
+    fontSize: 14,
+    fontFamily: "Prompt-Regular",
+    color: "#333",
+  },
+  listAmount: {
+    fontSize: 16,
+    fontFamily: "Prompt-Bold",
+  },
+  amountPlus: { color: "#4caf50" },
+  amountMinus: { color: "#e53935" },
+  separator: { height: 1, backgroundColor: "#eee", width: "100%" },
 });

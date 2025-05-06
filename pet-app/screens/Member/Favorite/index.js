@@ -42,7 +42,7 @@ export default function Favorite() {
   const fetchFavorites = async () => {
     if (!memberId) return;
     try {
-      const response = await fetch(`http://192.168.1.8:5000/api/auth/favorite/${memberId}`);
+      const response = await fetch(`http://192.168.1.12:5000/api/auth/favorite/${memberId}`);
       const data = await response.json();
       if (response.ok) {
         // สมมติว่า API ส่งกลับมาเป็น { favorites: [...] }

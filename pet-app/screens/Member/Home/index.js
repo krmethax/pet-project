@@ -48,7 +48,7 @@ export default function Home() {
   // ดึงข้อมูลผู้ใช้ (สมาชิก)
   const fetchUser = useCallback(() => {
     if (!memberId) return;
-    fetch(`http://192.168.1.9:5000/api/auth/member/${memberId}`)
+    fetch(`http://192.168.1.12:5000/api/auth/member/${memberId}`)
       .then((res) => res.json())
       .then((data) => setUser(data))
       .catch((err) => console.error("Error fetching user:", err));
@@ -56,7 +56,7 @@ export default function Home() {
 
   // ดึงข้อมูลพี่เลี้ยงทั้งหมด
   const fetchSitters = useCallback(() => {
-    fetch("http://192.168.1.9:5000/api/auth/sitters")
+    fetch("http://192.168.1.12:5000/api/auth/sitters")
       .then((res) => res.json())
       .then((data) => {
         setSitters(data.sitters || []);
@@ -66,7 +66,7 @@ export default function Home() {
 
   // ดึงข้อมูลประเภทสัตว์เลี้ยงจาก API
   const fetchPetCategories = useCallback(() => {
-    fetch("http://192.168.1.9:5000/api/auth/pet-categories")
+    fetch("http://192.168.1.12:5000/api/auth/pet-categories")
       .then((res) => res.json())
       .then((data) => setPetCategories(data.petCategories || []))
       .catch((err) => console.error("Error fetching pet categories:", err));
@@ -92,7 +92,7 @@ export default function Home() {
       for (let sitter of sitters) {
         try {
           const response = await fetch(
-            `http://192.168.1.9:5000/api/auth/reviews/sitter/${sitter.sitter_id}`
+            `http://192.168.1.12:5000/api/auth/reviews/sitter/${sitter.sitter_id}`
           );
           const data = await response.json();
           newRatings[sitter.sitter_id] = data.averageRating || 0;

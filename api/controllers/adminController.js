@@ -456,6 +456,7 @@ exports.getBookingSlips = async (req, res) => {
         payment_status,
         created_at,
         updated_at
+        
       FROM Bookings
       WHERE slip_image IS NOT NULL
     `;
@@ -556,5 +557,33 @@ exports.deleteBookingSlip = async (req, res) => {
   } catch (error) {
     console.error("Error deleting booking slip:", error);
     return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+  }
+};
+
+exports.getJobSubmissions = async (req, res) => {
+  try {
+    const { booking_id } = req.params;
+    // สมมติว่าข้อมูลรูปงานถูกเก็บในตาราง Job_Submission_Images
+    // คอลัมน์: id, booking_id, image_url, created_at
+    const query = `
+      SELECT image_url
+      FROM Job_Submission_Images
+      WHERE booking_id = ?
+      ORDER BY created_at ASC
+    `;
+    const rows = await db.query(query, [booking_id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'ไม่พบภาพงานสำหรับ booking_id นี้' });
+    }
+    // คืนเป็น array ของ URL
+    const imageUrls = rows.map(r => r.image_url);
+    return res.status(200).json({
+      message: 'ดึงภาพงานเรียบร้อย',
+      booking_id,
+      imageUrls
+    });
+  } catch (error) {
+    console.error('Error fetching job submissions:', error);
+    return res.status(500).json({ message: 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' });
   }
 };

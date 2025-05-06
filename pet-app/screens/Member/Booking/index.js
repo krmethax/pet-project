@@ -7,237 +7,169 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Modal,
-  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { AntDesign, FontAwesome } from '@expo/vector-icons';
+import moment from 'moment';
 
 export default function Booking() {
   const navigation = useNavigation();
+  const route = useRoute();
   const [memberId, setMemberId] = useState(null);
   const [bookings, setBookings] = useState([]);
-  const [loadingBookings, setLoadingBookings] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedTab, setSelectedTab] = useState('payment');
 
-  // States สำหรับข้อมูลประเภทงาน, ประเภทสัตว์เลี้ยง และบริการของพี่เลี้ยง
-  const [serviceTypes, setServiceTypes] = useState([]);
-  const [petCategories, setPetCategories] = useState([]);
-  const [sitterServices, setSitterServices] = useState([]);
-
-  // State สำหรับ Tab View: "pending", "review", "paid"
-  const [selectedTab, setSelectedTab] = useState("pending");
-
-  // ดึง member_id จาก AsyncStorage เมื่อ component mount
+  // ถ้ามาจาก Review ก็สลับไปแท็บรีวิว
   useEffect(() => {
-    const getMemberId = async () => {
-      try {
-        const storedMemberId = await AsyncStorage.getItem('member_id');
-        if (storedMemberId) {
-          setMemberId(storedMemberId);
-        } else {
-          navigation.replace('Login');
-        }
-      } catch (error) {
-        console.error('Failed to fetch member_id:', error);
-      }
-    };
-    getMemberId();
-  }, [navigation]);
-
-  // ดึงข้อมูลการจองของสมาชิก
-  const fetchBookings = useCallback(() => {
-    if (memberId) {
-      setLoadingBookings(true);
-      fetch(`http://192.168.1.8:5000/api/auth/member/${memberId}/bookings`)
-        .then(async (response) => {
-          if (!response.ok) {
-            const text = await response.text();
-            console.error('Error fetching bookings. Status:', response.status, 'Text:', text);
-            throw new Error('ไม่สามารถดึงข้อมูลการจองได้');
-          }
-          return response.json();
-        })
-        .then((data) => {
-          console.log('Bookings from server:', data);
-          setBookings(data.bookings || []);
-          setLoadingBookings(false);
-        })
-        .catch((error) => {
-          console.error('Error fetching bookings:', error);
-          setLoadingBookings(false);
-        });
+    const { reviewedBookingId } = route.params || {};
+    if (reviewedBookingId) {
+      setSelectedTab('review');
+      navigation.setParams({ reviewedBookingId: undefined });
     }
+  }, [route.params]);
+
+  // โหลด memberId หรือเด้งไปหน้า Login
+  useEffect(() => {
+    AsyncStorage.getItem('member_id').then((id) => {
+      if (id) setMemberId(id);
+      else navigation.replace('Login');
+    });
+  }, []);
+
+  // Fetch bookings ของ member
+  const fetchBookings = useCallback(() => {
+    if (!memberId) return;
+    setLoading(true);
+    fetch(`http://192.168.1.12:5000/api/auth/member/${memberId}/bookings`)
+      .then((res) => res.json())
+      .then((data) => setBookings(data.bookings || []))
+      .catch(console.error)
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [memberId]);
 
+  // รีเฟรชเวลากลับมาก่อนหน้า
   useEffect(() => {
-    fetchBookings();
-  }, [memberId, fetchBookings]);
+    const unsub = navigation.addListener('focus', fetchBookings);
+    return unsub;
+  }, [navigation, fetchBookings]);
 
-  const onRefresh = useCallback(() => {
-    fetchBookings();
-  }, [fetchBookings]);
+  useEffect(() => { fetchBookings(); }, [memberId]);
+  const onRefresh = () => { setRefreshing(true); fetchBookings(); };
 
-  // ดึงข้อมูลประเภทงานจาก API
-  useEffect(() => {
-    fetch("http://192.168.1.8:5000/api/auth/service-type")
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.serviceTypes) {
-          setServiceTypes(data.serviceTypes);
-        } else {
-          setServiceTypes(data);
-        }
-      })
-      .catch((error) => console.error("Error fetching service types:", error));
-  }, []);
-
-  // ดึงข้อมูลประเภทสัตว์เลี้ยงจาก API
-  useEffect(() => {
-    fetch("http://192.168.1.8:5000/api/auth/pet-categories")
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.petCategories) {
-          setPetCategories(data.petCategories);
-        } else {
-          setPetCategories(data);
-        }
-      })
-      .catch((error) => console.error("Error fetching pet categories:", error));
-  }, []);
-
-  // ดึงข้อมูลบริการของพี่เลี้ยงจาก API
-  useEffect(() => {
-    fetch("http://192.168.1.8:5000/api/auth/sitter-services")
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.services) {
-          setSitterServices(data.services);
-        } else {
-          setSitterServices(data);
-        }
-      })
-      .catch((error) => console.error("Error fetching sitter services:", error));
-  }, []);
-
-  // กรองการจองตามแท็บที่เลือก
-  const filteredBookings = bookings.filter((booking) => {
-    const timeDiff = new Date() - new Date(booking.created_at);
-    const threeDays = 3 * 24 * 60 * 60 * 1000;
-    if (selectedTab === "pending") {
-      return booking.payment_status !== "paid";
-    } else if (selectedTab === "review") {
-      // งานที่ชำระแล้วแต่ยังไม่ครบ 3 วัน
-      return booking.payment_status === "paid" && timeDiff < threeDays;
-    } else if (selectedTab === "paid") {
-      // งานที่ชำระแล้ว (ไม่เกี่ยวกับเวลา)
-      return booking.payment_status === "paid";
-    }
-    return false;
+  // กรองรายการตามแท็บ
+  const filtered = bookings.filter((b) => {
+    if (selectedTab === 'payment') return b.payment_status !== 'paid';
+    if (selectedTab === 'review')  return b.payment_status === 'paid';
+    return true;
   });
+
+  // กำหนดข้อความป้ายสถานะ
+  const statusLabel = (b) => {
+    if (b.payment_status !== 'paid')             return 'รอชำระเงิน';
+    if (b.payment_status === 'paid' && !b.has_review) return 'ชำระเงินแล้ว';
+    return 'รีวิวแล้ว'; // paid && has_review
+  };
+
+  // กดป้ายสถานะเพื่อไปหน้า Review (เฉพาะ paid & not reviewed)
+  const onStatusPress = (b) => {
+    if (b.payment_status === 'paid' && !b.has_review) {
+      navigation.navigate('Review', {
+        bookingId:   b.booking_id,
+        memberId:    memberId,
+        sitterId:    b.sitter_id,
+        jobDetails: {
+          description: b.service_job_name,
+          price:       b.service_price,
+          short_name:  b.service_type_short_name,
+        },
+      });
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        refreshControl={<RefreshControl refreshing={loadingBookings} onRefresh={onRefresh} />}
+        contentContainerStyle={styles.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <Text style={styles.title}>การจอง</Text>
-
-        {/* Tab View */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, selectedTab === "pending" && styles.tabButtonActive]}
-            onPress={() => setSelectedTab("pending")}
-          >
-            <Text style={[styles.tabButtonText, selectedTab === "pending" && styles.tabButtonTextActive]}>
-              รอชำระเงิน
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabButton, selectedTab === "paid" && styles.tabButtonActive]}
-            onPress={() => setSelectedTab("paid")}
-          >
-            <Text style={[styles.tabButtonText, selectedTab === "paid" && styles.tabButtonTextActive]}>
-              ชำระเงินแล้ว
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabButton, selectedTab === "review" && styles.tabButtonActive]}
-            onPress={() => setSelectedTab("review")}
-          >
-            <Text style={[styles.tabButtonText, selectedTab === "review" && styles.tabButtonTextActive]}>
-              รอรีวิว
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.tabs}>
+          {[
+            { key: 'payment', label: 'การชำระเงิน' },
+            { key: 'review',  label: 'รีวิว'       },
+          ].map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tab, selectedTab === tab.key && styles.tabActive]}
+              onPress={() => setSelectedTab(tab.key)}
+            >
+              <Text style={[styles.tabText, selectedTab === tab.key && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {loadingBookings ? (
-          <ActivityIndicator size="large" color="#000" />
-        ) : filteredBookings.length > 0 ? (
-          filteredBookings.map((booking) => {
-            // ค้นหาข้อมูลบริการของพี่เลี้ยงจาก sitterServices
-            const jobRecord = sitterServices.find(
-              (s) => s.sitter_service_id === booking.sitter_service_id
-            );
-            const jobName = jobRecord && jobRecord.description ? jobRecord.description : "ไม่ระบุ";
-            const jobType =
-              jobRecord && jobRecord.service_type_id
-                ? (serviceTypes.find((st) => st.service_type_id === jobRecord.service_type_id)?.short_name || "ไม่ระบุ")
-                : "ไม่ระบุ";
-            const petTypeName =
-              petCategories.find((p) => p.pet_type_id === booking.pet_type_id)?.type_name || "ไม่ระบุ";
-            const sitterName = booking.sitter_name || `พี่เลี้ยง ${booking.sitter_id}`;
-
-            return (
-              <View key={booking.booking_id} style={styles.bookingCard}>
-                {/* Card Header: ข้อมูลสรุป */}
-                <View style={styles.cardHeader}>
-                  <View style={styles.leftColumn}>
-                    <Text style={styles.infoText}>งาน: {jobName}</Text>
-                    <Text style={styles.infoText}>ประเภทงาน: {jobType}</Text>
-                    <Text style={styles.infoText}>ประเภทสัตว์เลี้ยง: {petTypeName}</Text>
-                    <Text style={styles.infoText}>พี่เลี้ยง: {sitterName}</Text>
-                  </View>
-                  <View style={styles.rightColumn}>
-                    <Text style={styles.priceText}>ราคา: {booking.total_price} บาท</Text>
-                    {selectedTab === "pending" && (
-                      <View style={styles.statusButtonPending}>
-                        <Text style={styles.statusButtonText}>รอชำระเงิน</Text>
-                      </View>
-                    )}
-                    {selectedTab === "paid" && (
-                      <View style={styles.statusButtonPaid}>
-                        <Text style={styles.statusButtonText}>ชำระเงินแล้ว</Text>
-                      </View>
-                    )}
-                    {selectedTab === "review" && (
-                      <TouchableOpacity
-                        style={styles.reviewButton}
-                        onPress={() =>
-                          navigation.navigate("Review", {
-                            bookingId: booking.booking_id,
-                            memberId: memberId,
-                            sitterId: booking.sitter_id,
-                            jobDetails: jobRecord, // ส่งรายละเอียดงานทั้งหมดไปที่หน้า Review
-                          })
-                        }
-                      >
-                        <Text style={styles.reviewButtonText}>รีวิว</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
+        {loading ? (
+          <ActivityIndicator size="large" />
+        ) : filtered.length > 0 ? (
+          filtered.map((b) => (
+            <View key={b.booking_id} style={styles.card}>
+              {/* รายละเอียดงาน */}
+              <View style={styles.row}>
+                <FontAwesome name="file-text-o" size={16} style={styles.icon} />
+                <Text style={styles.text}>ชื่องาน: {b.service_job_name}</Text>
               </View>
-            );
-          })
+              <View style={styles.row}>
+                <AntDesign name="tags" size={16} style={styles.icon} />
+                <Text style={styles.text}>ประเภทงาน: {b.service_type_short_name}</Text>
+              </View>
+              <View style={styles.row}>
+                <FontAwesome name="paw" size={16} style={styles.icon} />
+                <Text style={styles.text}>ประเภทสัตว์เลี้ยง: {b.pet_type}</Text>
+              </View>
+              <View style={styles.row}>
+                <AntDesign name="tagso" size={16} style={styles.icon} />
+                <Text style={styles.text}>จำนวนสัตว์: {b.pet_quantity}</Text>
+              </View>
+              <View style={styles.row}>
+                <AntDesign name="creditcard" size={16} style={styles.icon} />
+                <Text style={styles.text}>ราคา: {b.service_price} บาท</Text>
+              </View>
+              <View style={styles.row}>
+                <FontAwesome name="calendar" size={16} style={styles.icon} />
+                <Text style={styles.text}>
+                  วันที่จอง: {moment(b.booking_date).format('DD/MM/YYYY')}
+                </Text>
+              </View>
+
+              {/* ป้ายสถานะ */}
+              <TouchableOpacity
+                onPress={() => onStatusPress(b)}
+                disabled={!(b.payment_status === 'paid' && !b.has_review)}
+              >
+                <View style={[
+                  styles.statusBadge,
+                  b.payment_status !== 'paid'                     && styles.statusBadgeUnpaid,
+                  b.payment_status === 'paid' && !b.has_review   && styles.statusBadgePaid,
+                  b.payment_status === 'paid' && b.has_review    && styles.statusBadgeReviewed,
+                ]}>
+                  <Text style={styles.statusText}>{statusLabel(b)}</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          ))
         ) : (
-          <View style={styles.noBookingContainer}>
-            <Text style={styles.bookingText}>ยังไม่มีการจอง</Text>
-          </View>
+          <Text style={styles.noData}>ไม่พบรายการ</Text>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -245,235 +177,40 @@ export default function Booking() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fff" },
-  scrollContainer: { padding: 20, paddingBottom: 40 },
-  title: {
-    fontSize: 18,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-    marginBottom: 10,
-  },
-  // bookingText สำหรับข้อความในกรณีไม่มีการจอง
-  bookingText: {
-    fontSize: 18,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-    textAlign: "center",
-  },
-  infoText: {
-    fontSize: 16,
-    fontFamily: "Prompt-Medium",
-    color: "#000",
-  },
-  // Header
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 25,
-  },
-  profileSection: { flexDirection: "row", alignItems: "center" },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#FF0000",
-  },
-  avatarImage: { width: 40, height: 40, borderRadius: 20 },
-  greeting: {},
-  greetingText: { fontSize: 18, fontFamily: "Prompt-Bold", color: "#000" },
-  subGreeting: { fontSize: 14, fontFamily: "Prompt-Regular", color: "#555" },
-  // Tab View
-  tabContainer: {
-    flexDirection: "row",
-    marginBottom: 15,
-  },
-  tabButton: {
+  safeArea: { flex: 1, backgroundColor: '#fff' },
+  container: { padding: 20, paddingBottom: 40 },
+  title: { fontSize: 20, fontFamily: 'Prompt-Bold', marginBottom: 12 },
+  tabs: { flexDirection: 'row', marginBottom: 16 },
+  tab: {
     flex: 1,
     paddingVertical: 8,
     borderBottomWidth: 2,
-    borderBottomColor: "#ccc",
-    alignItems: "center",
+    borderBottomColor: '#ccc',
+    alignItems: 'center',
   },
-  tabButtonActive: {
-    borderBottomColor: "#FF0000",
+  tabActive: { borderBottomColor: '#E52020' },
+  tabText: { fontFamily: 'Prompt-Medium', color: '#333' },
+  tabTextActive: { color: '#E52020' },
+  card: {
+    backgroundColor: '#fafafa',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 2,
   },
-  tabButtonText: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-  },
-  tabButtonTextActive: {
-    color: "#FF0000",
-  },
-  // Section Header for Pet Categories
-  capsuleScrollView: { marginBottom: 20 },
-  categoryCapsule: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#FF0000",
-    backgroundColor: "#fff",
-    marginRight: 10,
-  },
-  categoryCapsuleSelected: { backgroundColor: "#FF0000" },
-  categoryCapsuleText: {
-    fontSize: 14,
-    fontFamily: "Prompt-Regular",
-    color: "#FF0000",
-  },
-  categoryCapsuleTextSelected: { color: "#fff" },
-  // Selected Filters
-  selectedFiltersContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 20,
-  },
-  selectedFilterCapsule: {
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 15,
-    backgroundColor: "#FF0000",
-    marginRight: 5,
-    marginBottom: 5,
-  },
-  selectedFilterText: {
-    fontSize: 12,
-    fontFamily: "Prompt-Regular",
-    color: "#fff",
-  },
-  // Sitters (Horizontal Avatar List)
-  sitterAvatarRow: { marginBottom: 20 },
-  sitterAvatarContainer: { width: 70, alignItems: "center", marginRight: 20 },
-  sitterAvatarWrapper: {
-    width: 60,
-    height: 60,
-    borderRadius: 15,
-    backgroundColor: "#ccc",
-    overflow: "hidden",
-    marginBottom: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  sitterAvatarImage: { width: "100%", height: "100%", resizeMode: "cover" },
-  sitterPlaceholder: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#999",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  sitterAvatarName: { fontSize: 14, fontFamily: "Prompt-Regular", color: "#000" },
-  ratingContainer: { flexDirection: "row", alignItems: "center", marginTop: 2 },
-  starIcon: { marginRight: 3 },
-  ratingText: { fontSize: 12, fontFamily: "Prompt-Regular", color: "#000" },
-  // Booking Card Styles
-  bookingCard: {
-    backgroundColor: "#f2f2f2",
-    padding: 15,
-    marginBottom: 15,
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between" },
-  leftColumn: { flex: 1 },
-  rightColumn: { flex: 1, alignItems: "flex-end" },
-  priceText: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-    marginBottom: 5,
-  },
-  statusButtonPaid: {
-    backgroundColor: "#28a745", // สีเขียว
-    paddingVertical: 4,
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  icon: { marginRight: 6, color: '#555' },
+  text: { fontSize: 14, fontFamily: 'Prompt-Regular', color: '#333' },
+  statusBadge: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
     paddingHorizontal: 8,
-    borderRadius: 5,
-    width: 100,
-  },
-  statusButtonPending: {
-    backgroundColor: "#ffc107", // สีเหลือง/ส้ม
     paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 5,
+    borderRadius: 4,
   },
-  statusButtonText: {
-    color: "#fff",
-    fontFamily: "Prompt-Bold",
-    fontSize: 14,
-  },
-  reviewButton: {
-    backgroundColor: "#FFCC00", // สีเหลืองสำหรับรีวิว
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 5,
-    width: 100,
-  },
-  reviewButtonText: {
-    color: "#fff",
-    fontFamily: "Prompt-Bold",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 20,
-    width: "90%",
-    maxHeight: "80%",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-    marginBottom: 15,
-    textAlign: "center",
-  },
-  modalSectionTitle: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    color: "#000",
-    marginBottom: 10,
-  },
-  modalCapsuleRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 15,
-  },
-  modalCloseButton: {
-    backgroundColor: "#FF0000",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 10,
-  },
-  modalCloseButtonText: {
-    fontSize: 16,
-    fontFamily: "Prompt-Bold",
-    color: "#fff",
-  },
-  // Centering text when no booking
-  noBookingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 50,
-  },
+  statusBadgeUnpaid:  { backgroundColor: '#E52020' }, // รอชำระเงิน (แดง)
+  statusBadgePaid:    { backgroundColor: '#4CAF50' }, // ชำระเงินแล้ว (เขียว)
+  statusBadgeReviewed:{ backgroundColor: '#999'   }, // รีวิวแล้ว (เทา)
+  statusText: { fontFamily: 'Prompt-Bold', color: '#fff', fontSize: 14 },
+  noData: { textAlign: 'center', fontFamily: 'Prompt-Regular', fontSize: 16, color: '#666' },
 });

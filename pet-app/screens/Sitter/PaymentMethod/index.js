@@ -48,7 +48,7 @@ export default function PaymentMethod() {
   const fetchPaymentMethods = useCallback(() => {
     if (sitterId) {
       setLoading(true);
-      fetch(`http://192.168.1.8:5000/api/sitter/payment-methods/${sitterId}`)
+      fetch(`http://192.168.1.12:5000/api/sitter/payment-methods/${sitterId}`)
         .then((response) => response.json())
         .then((data) => {
           if (data.paymentMethods) {
@@ -103,7 +103,7 @@ export default function PaymentMethod() {
       bank_name: "",
     };
 
-    fetch("http://192.168.1.8:5000/api/sitter/payment-methods", {
+    fetch("http://192.168.1.12:5000/api/sitter/payment-methods", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

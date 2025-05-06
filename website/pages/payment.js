@@ -19,7 +19,7 @@ export default function PaymentManagement() {
   const fetchBookingSlips = useCallback(() => {
     setLoading(true);
     axios
-      .get("http://192.168.1.12:5000/api/admin/booking-slips", {
+      .get("http://192.168.1.8:5000/api/admin/booking-slips", {
         params: { status: statusFilter },
       })
       .then((response) => {
@@ -53,7 +53,7 @@ export default function PaymentManagement() {
   // อัปเดตสถานะสลิปการจอง (PUT /api/admin/booking-slips)
   const handleStatusUpdate = async () => {
     try {
-      const response = await axios.put("http://192.168.1.12:5000/api/admin/booking-slips", {
+      const response = await axios.put("http://192.168.1.8:5000/api/admin/booking-slips", {
         booking_id: selectedSlip.booking_id,
         payment_status: selectedSlip.payment_status, // ส่ง payment_status ที่ถูกเลือกใน modal
       });
@@ -71,7 +71,7 @@ export default function PaymentManagement() {
     if (confirm("Are you sure you want to delete this booking slip?")) {
       try {
         const response = await axios.delete(
-          `http://192.168.1.12:5000/api/admin/booking-slips/${booking_id}`
+          `http://192.168.1.8:5000/api/admin/booking-slips/${booking_id}`
         );
         swal("Success", response.data.message, "success");
         fetchBookingSlips();
