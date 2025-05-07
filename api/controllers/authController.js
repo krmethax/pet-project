@@ -761,3 +761,42 @@ exports.getReviewsForSitter = async (req, res) => {
     return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
   }
 };
+
+// Ensure correct cancellation logic on the server side
+exports.cancelService = async (req, res) => {
+  const { booking_id, member_id } = req.body;
+
+  try {
+    const query = `
+      SELECT * FROM Bookings
+      WHERE booking_id = ? AND member_id = ?
+    `;
+    const result = await db.query(query, [booking_id, member_id]);
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: "ไม่พบข้อมูลการจองที่ระบุ" });
+    }
+
+    const booking = result[0];
+
+    if (booking.payment_status === 'paid') {
+      return res.status(400).json({ message: "ไม่สามารถยกเลิกการบริการได้ เนื่องจากการชำระเงินแล้ว" });
+    }
+
+    if (booking.status === 'cancelled') {
+      return res.status(400).json({ message: "การบริการนี้ถูกยกเลิกแล้ว" });
+    }
+
+    const updateQuery = `
+      UPDATE Bookings
+      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+      WHERE booking_id = ?
+    `;
+    await db.query(updateQuery, [booking_id]);
+
+    return res.status(200).json({ message: "ยกเลิกการบริการเรียบร้อยแล้ว" });
+  } catch (error) {
+    console.error("Error cancelling service:", error);
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+  }
+};

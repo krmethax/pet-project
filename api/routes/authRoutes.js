@@ -27,6 +27,9 @@ router.get('/member/:member_id/bookings', authController.getBookingsForMember);
 // ยกเลิกการจอง (สมาชิกสามารถยกเลิกได้เฉพาะเมื่อสถานะการชำระเงินไม่ใช่ 'paid')
 router.post('/member/cancel-booking', authController.cancelBooking);
 
+// **เพิ่ม route สำหรับการยกเลิกการบริการ (cancel service)**
+router.post('/member/cancel-service', authController.cancelService);  // <-- Added route for canceling service
+
 // Route สำหรับดึงข้อมูลประเภทบริการ
 router.get('/service-type', authController.getServiceTypes);
 

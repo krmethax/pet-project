@@ -73,7 +73,8 @@ export default function Booking() {
 
   // กำหนดข้อความป้ายสถานะ
   const statusLabel = (b) => {
-    if (b.payment_status !== 'paid')             return 'รอชำระเงิน';
+    if (b.status === 'cancelled') return 'ยกเลิกแล้ว'; // สถานะใหม่
+    if (b.payment_status !== 'paid') return 'รอชำระเงิน';
     if (b.payment_status === 'paid' && !b.has_review) return 'ชำระเงินแล้ว';
     return 'รีวิวแล้ว'; // paid && has_review
   };
@@ -94,6 +95,41 @@ export default function Booking() {
     }
   };
 
+  // ฟังก์ชันสำหรับยกเลิกบริการ
+  const cancelService = (bookingId) => {
+    fetch(`http://192.168.1.12:5000/api/auth/member/cancel-service`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_id: bookingId, member_id: memberId }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        console.log(data); // Log the response to check if the message is correct
+        if (data.message === "ยกเลิกการบริการเรียบร้อยแล้ว") {
+          // Immediately update the status of the canceled booking in the state
+          setBookings((prevBookings) =>
+            prevBookings.map((booking) =>
+              booking.booking_id === bookingId
+                ? { ...booking, status: 'cancelled' } // Set status to 'cancelled'
+                : booking
+            )
+          );
+
+          // Optionally, you can refetch data to get the latest status from the backend
+          fetchBookings();  // Refetch to ensure the latest data is shown
+
+          alert('การบริการถูกยกเลิกเรียบร้อยแล้ว');
+        } else {
+          // Handle failure case (e.g., show a message)
+          alert('ไม่สามารถยกเลิกการบริการได้');
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        alert('เกิดข้อผิดพลาดในการยกเลิกบริการ');
+      });
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
@@ -103,10 +139,7 @@ export default function Booking() {
       >
         <Text style={styles.title}>การจอง</Text>
         <View style={styles.tabs}>
-          {[
-            { key: 'payment', label: 'การชำระเงิน' },
-            { key: 'review',  label: 'รีวิว'       },
-          ].map((tab) => (
+          {[{ key: 'payment', label: 'การชำระเงิน' }, { key: 'review', label: 'รีวิว' }].map((tab) => (
             <TouchableOpacity
               key={tab.key}
               style={[styles.tab, selectedTab === tab.key && styles.tabActive]}
@@ -159,13 +192,21 @@ export default function Booking() {
               >
                 <View style={[
                   styles.statusBadge,
-                  b.payment_status !== 'paid'                     && styles.statusBadgeUnpaid,
-                  b.payment_status === 'paid' && !b.has_review   && styles.statusBadgePaid,
-                  b.payment_status === 'paid' && b.has_review    && styles.statusBadgeReviewed,
+                  b.status === 'cancelled' && styles.statusBadgeCancelled, // New style for cancelled status
+                  b.payment_status !== 'paid' && styles.statusBadgeUnpaid,
+                  b.payment_status === 'paid' && !b.has_review && styles.statusBadgePaid,
+                  b.payment_status === 'paid' && b.has_review && styles.statusBadgeReviewed,
                 ]}>
                   <Text style={styles.statusText}>{statusLabel(b)}</Text>
                 </View>
               </TouchableOpacity>
+
+              {/* ปุ่มยกเลิกบริการ */}
+              {b.status !== 'cancelled' && b.payment_status !== 'paid' && (
+                <TouchableOpacity style={styles.cancelButton} onPress={() => cancelService(b.booking_id)}>
+                  <Text style={styles.cancelButtonText}>ยกเลิกบริการ</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ))
         ) : (
@@ -181,36 +222,21 @@ const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 20, fontFamily: 'Prompt-Bold', marginBottom: 12 },
   tabs: { flexDirection: 'row', marginBottom: 16 },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: '#ccc',
-    alignItems: 'center',
-  },
+  tab: { flex: 1, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: '#ccc', alignItems: 'center' },
   tabActive: { borderBottomColor: '#E52020' },
   tabText: { fontFamily: 'Prompt-Medium', color: '#333' },
   tabTextActive: { color: '#E52020' },
-  card: {
-    backgroundColor: '#fafafa',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 2,
-  },
+  card: { backgroundColor: '#fafafa', borderRadius: 8, padding: 16, marginBottom: 12, elevation: 2 },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   icon: { marginRight: 6, color: '#555' },
   text: { fontSize: 14, fontFamily: 'Prompt-Regular', color: '#333' },
-  statusBadge: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  statusBadgeUnpaid:  { backgroundColor: '#E52020' }, // รอชำระเงิน (แดง)
-  statusBadgePaid:    { backgroundColor: '#4CAF50' }, // ชำระเงินแล้ว (เขียว)
-  statusBadgeReviewed:{ backgroundColor: '#999'   }, // รีวิวแล้ว (เทา)
+  statusBadge: { marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  statusBadgeCancelled: { backgroundColor: '#999' }, // สีสำหรับสถานะยกเลิก
+  statusBadgeUnpaid: { backgroundColor: '#E52020' }, // รอชำระเงิน
+  statusBadgePaid: { backgroundColor: '#4CAF50' }, // ชำระเงินแล้ว
+  statusBadgeReviewed: { backgroundColor: '#999' }, // รีวิวแล้ว
   statusText: { fontFamily: 'Prompt-Bold', color: '#fff', fontSize: 14 },
   noData: { textAlign: 'center', fontFamily: 'Prompt-Regular', fontSize: 16, color: '#666' },
+  cancelButton: { marginTop: 12, backgroundColor: '#000', paddingVertical: 10, borderRadius: 5, alignItems: 'center' },
+  cancelButtonText: { color: '#fff', fontFamily: 'Prompt-Bold', fontSize: 16 },
 });
